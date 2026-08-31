@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:16
+    container_name: activos_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: activos_user
+      POSTGRES_PASSWORD: activos_pass
+      POSTGRES_DB: activos_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # Se ejecuta automáticamente la primera vez que se crea el contenedor:
+      - ./backend/init_db/initial_schema.sql:/docker-entrypoint-initdb.d/01_initial_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U activos_user -d activos_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: activos_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://activos_user:activos_pass@db:5432/activos_db
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build: ./frontend
+    container_name: activos_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  db_data:

@@ -1,0 +1,17 @@
+# === Migración histórica: preprocesamiento de imágenes ===
+opencv-python-headless==4.10.0.84
+pillow==10.4.0
+
+# === OCR/HTR ===
+# TrOCR (Transformer-based OCR) es el candidato mencionado en el documento
+# de tecnologías. Es pesado (requiere PyTorch) - instálalo solo cuando
+# empieces el módulo de migración del Kardex histórico, no antes:
+#
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install transformers
+#
+# Si en la reunión con la institución se opta por un OCR más liviano en
+# vez de TrOCR, una alternativa clásica es pytesseract (requiere además
+# el binario Tesseract instalado en el sistema operativo):
+#
+#   pip install pytesseract

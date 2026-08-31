@@ -1,0 +1,15 @@
+# Instala TODO el stack del proyecto de una sola vez (recomendado si ya
+# descargaste todo y quieres el entorno completo listo desde el inicio).
+#
+# Si prefieres instalar por partes segun avances de Sprint, usa en su
+# lugar los archivos individuales dentro de requirements/:
+#   pip install -r requirements/base.txt
+#   pip install -r requirements/dev.txt
+#   pip install -r requirements/analytics.txt
+#   pip install -r requirements/ocr.txt
+#   (TrOCR/torch se instala aparte, ver requirements/ocr.txt)
+
+-r requirements/base.txt
+-r requirements/dev.txt
+-r requirements/analytics.txt
+-r requirements/ocr.txt
