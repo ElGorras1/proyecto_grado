@@ -1,26 +1,53 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.auth import LoginRequest, TokenResponse, UsuarioMe
-from app.crud.usuario import authenticate, registrar_login_exitoso
-from app.core.security import create_access_token
+from app.crud.usuario import authenticate, registrar_login_exitoso, get_usuario_by_email
+from app.crud.auditoria import registrar_evento_auditoria
+from app.core.security import create_access_token, verify_password
 from app.api.deps import get_current_user, require_roles
 from app.models.usuario import Usuario
+from app.core.rate_limit import limiter
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    usuario = authenticate(db, payload.email, payload.password)
-    if usuario is None:
-        # Mensaje genérico: no revelar si el email existe o no (buena práctica de seguridad).
+@limiter.limit("5/5minutes")
+def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
+    # Buscar usuario y verificar contraseña por separado para poder
+    # registrar en auditoría si el usuario existía o no.
+    usuario = get_usuario_by_email(db, payload.email)
+    ip = request.client.host if request.client else None
+
+    if usuario is None or not verify_password(payload.password, usuario.password_hash):
+        # Login fallido: registrar rechazo en auditoría.
+        registrar_evento_auditoria(
+            db,
+            usuario_id=usuario.id if usuario else None,
+            accion="login",
+            recurso="usuario",
+            recurso_id=usuario.id if usuario else None,
+            resultado="rechazo",
+            ip_origen=ip,
+            detalle={"email_intentado": payload.email},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales incorrectas",
         )
 
+    # Login exitoso: registrar en auditoría y actualizar last_login_at.
+    registrar_evento_auditoria(
+        db,
+        usuario_id=usuario.id,
+        accion="login",
+        recurso="usuario",
+        recurso_id=usuario.id,
+        resultado="exito",
+        ip_origen=ip,
+    )
     registrar_login_exitoso(db, usuario)
 
     token = create_access_token(

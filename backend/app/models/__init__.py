@@ -4,6 +4,7 @@ from app.models.rol_permiso import rol_permiso
 from app.models.area import Area
 from app.models.usuario import Usuario
 from app.models.activos import CategoriaActivo, Activo, Existencia
+from app.models.ubicacion_evento import UbicacionEvento
 from app.models.movimientos import TipoMovimiento, Movimiento
 from app.models.legacy import DocumentoLegacy, ExtraccionLegacy, ValidacionLegacy
 from app.models.analitica import ResultadoRegla, EvaluacionAnomalia
@@ -18,6 +19,7 @@ __all__ = [
     "CategoriaActivo",
     "Activo",
     "Existencia",
+    "UbicacionEvento",
     "TipoMovimiento",
     "Movimiento",
     "DocumentoLegacy",

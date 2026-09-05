@@ -37,6 +37,7 @@ class Movimiento(Base):
     usuario_registrador_id: Mapped[int] = mapped_column(ForeignKey("usuario.id"), nullable=False)
     movimiento_origen_id: Mapped[int | None] = mapped_column(ForeignKey("movimiento.id"))
     documento_legacy_id: Mapped[int | None] = mapped_column(ForeignKey("documento_legacy.id"))
+    ubicacion_evento_id: Mapped[int | None] = mapped_column(ForeignKey("ubicacion_evento.id"))
     cantidad: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
     saldo_resultante: Mapped[float | None] = mapped_column(Numeric(14, 2))
     fecha_hora: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
