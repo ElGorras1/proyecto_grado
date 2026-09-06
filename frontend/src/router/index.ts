@@ -23,6 +23,24 @@ const router = createRouter({
       meta: { roles: ['Administrador'] },
     },
     {
+      path: '/usuarios',
+      name: 'usuarios',
+      component: () => import('@/views/UsuariosView.vue'),
+      meta: { roles: ['Administrador'] },
+    },
+    {
+      path: '/areas',
+      name: 'areas',
+      component: () => import('@/views/AreasView.vue'),
+      meta: { roles: ['Administrador'] },
+    },
+    {
+      path: '/reportes/accesos',
+      name: 'reporteAccesos',
+      component: () => import('@/views/ReporteAccesosView.vue'),
+      meta: { roles: ['Administrador', 'Auditor'] },
+    },
+    {
       path: '/403',
       name: 'forbidden',
       component: () => import('@/views/ForbiddenView.vue'),
