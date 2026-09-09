@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import api from '@/services/api'
 
 interface AccesoLog {
@@ -15,6 +15,7 @@ const accesos = ref<AccesoLog[]>([])
 const fechaDesde = ref('')
 const fechaHasta = ref('')
 const resultado = ref('')
+const filtroBusqueda = ref('')
 const cargando = ref(false)
 const error = ref('')
 
@@ -30,7 +31,7 @@ async function cargarAccesos() {
     const { data } = await api.get('/auditoria/accesos', { params })
     accesos.value = data
   } catch {
-    error.value = 'Error al cargar los registros de acceso'
+    error.value = 'Error al cargar los registros de acceso y auditoría'
   } finally {
     cargando.value = false
   }
@@ -48,139 +49,174 @@ function formatearFecha(iso: string): string {
   })
 }
 
+const accesosFiltrados = computed(() => {
+  if (!filtroBusqueda.value.trim()) return accesos.value
+  const q = filtroBusqueda.value.toLowerCase()
+  return accesos.value.filter((a) => {
+    const usuarioStr = (a.usuario_id?.toString() ?? 'desconocido').toLowerCase()
+    const ipStr = (a.ip_origen ?? '').toLowerCase()
+    return usuarioStr.includes(q) || ipStr.includes(q)
+  })
+})
+
 onMounted(cargarAccesos)
 </script>
 
 <template>
-  <div class="reporte-accesos">
-    <h1>Reporte de accesos</h1>
+  <div class="space-y-6 max-w-7xl mx-auto font-sans">
+    <!-- ENCABEZADO -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
+          <i class="pi pi-history text-blue-600"></i>
+          <span>Reporte de Accesos y Auditoría de Seguridad</span>
+        </h1>
+        <p class="text-sm font-medium text-slate-500 mt-1">
+          Bitácora inmutable de inicios de sesión, IPs de origen y eventos de autenticación
+        </p>
+      </div>
 
-    <div class="filtros">
-      <label>
-        Desde
-        <input v-model="fechaDesde" type="date" />
-      </label>
-      <label>
-        Hasta
-        <input v-model="fechaHasta" type="date" />
-      </label>
-      <label>
-        Resultado
-        <select v-model="resultado">
-          <option value="">Todos</option>
-          <option value="exito">Éxito</option>
-          <option value="rechazo">Rechazo</option>
-        </select>
-      </label>
-      <button :disabled="cargando" @click="cargarAccesos">
-        {{ cargando ? 'Cargando...' : 'Filtrar' }}
+      <button
+        class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs hover:shadow transition-all disabled:opacity-60 cursor-pointer self-start sm:self-auto"
+        :disabled="cargando"
+        @click="cargarAccesos"
+      >
+        <i :class="['pi', cargando ? 'pi-spin pi-spinner' : 'pi-refresh', 'text-xs']"></i>
+        <span>{{ cargando ? 'Consultando...' : 'Actualizar Bitácora' }}</span>
       </button>
     </div>
 
-    <p v-if="error" class="error">{{ error }}</p>
+    <!-- ALERTAS -->
+    <div
+      v-if="error"
+      class="p-4 rounded-xl bg-red-50 border border-red-200/80 text-xs font-medium text-red-700 flex items-center gap-3 animate-in fade-in"
+    >
+      <i class="pi pi-exclamation-circle text-red-600 shrink-0 text-base"></i>
+      <span>{{ error }}</span>
+    </div>
 
-    <table v-if="accesos.length > 0">
-      <thead>
-        <tr>
-          <th>Fecha / Hora</th>
-          <th>Usuario</th>
-          <th>Resultado</th>
-          <th>IP</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="a in accesos" :key="a.id">
-          <td>{{ formatearFecha(a.fecha_hora) }}</td>
-          <td>{{ a.usuario_id ?? 'Desconocido' }}</td>
-          <td>
-            <span :class="a.resultado === 'exito' ? 'resultado-exito' : 'resultado-rechazo'">
-              {{ a.resultado }}
-            </span>
-          </td>
-          <td>{{ a.ip_origen ?? '—' }}</td>
-        </tr>
-      </tbody>
-    </table>
+    <!-- FILTROS DE AUDITORÍA -->
+    <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-4">
+      <div class="relative flex-1 min-w-[220px] max-w-sm">
+        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+          <i class="pi pi-search text-xs"></i>
+        </span>
+        <input
+          v-model="filtroBusqueda"
+          type="text"
+          placeholder="Buscar por ID de usuario o dirección IP..."
+          class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+        />
+      </div>
 
-    <p v-else-if="!cargando">No hay registros de acceso.</p>
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-1.5">
+          <label class="text-xs font-semibold text-slate-500">Desde:</label>
+          <input
+            v-model="fechaDesde"
+            type="date"
+            class="px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
 
-    <router-link to="/">Volver al panel principal</router-link>
+        <div class="flex items-center gap-1.5">
+          <label class="text-xs font-semibold text-slate-500">Hasta:</label>
+          <input
+            v-model="fechaHasta"
+            type="date"
+            class="px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div class="flex items-center gap-1.5">
+          <label class="text-xs font-semibold text-slate-500">Resultado:</label>
+          <select
+            v-model="resultado"
+            class="px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+          >
+            <option value="">Todos los eventos</option>
+            <option value="exito">Éxito</option>
+            <option value="rechazo">Rechazo / Fallo</option>
+          </select>
+        </div>
+
+        <button
+          type="button"
+          :disabled="cargando"
+          class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+          @click="cargarAccesos"
+        >
+          Aplicar Filtros
+        </button>
+      </div>
+    </div>
+
+    <!-- TABLA DE AUDITORÍA -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+      <div v-if="cargando" class="py-16 text-center text-slate-500">
+        <i class="pi pi-spin pi-spinner text-2xl text-blue-600 mb-2"></i>
+        <p class="text-xs font-medium">Recuperando registros de auditoría...</p>
+      </div>
+
+      <div v-else class="overflow-x-auto">
+        <table v-if="accesosFiltrados.length > 0" class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-50 text-slate-700 font-semibold uppercase text-xs tracking-wider border-b border-slate-200">
+              <th class="py-3.5 px-4">Marca Temporal</th>
+              <th class="py-3.5 px-4">Usuario ID</th>
+              <th class="py-3.5 px-4">Resultado de Autenticación</th>
+              <th class="py-3.5 px-4 font-mono">Dirección IP de Origen</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 text-xs text-slate-700">
+            <tr
+              v-for="a in accesosFiltrados"
+              :key="a.id"
+              class="hover:bg-slate-50/80 transition-colors"
+            >
+              <td class="py-3.5 px-4 font-medium text-slate-900 whitespace-nowrap">
+                <i class="pi pi-clock text-[10px] text-slate-400 mr-1.5"></i>
+                {{ formatearFecha(a.fecha_hora) }}
+              </td>
+              <td class="py-3.5 px-4">
+                <span v-if="a.usuario_id" class="font-bold text-slate-800">
+                  Usuario #{{ a.usuario_id }}
+                </span>
+                <span v-else class="text-slate-400 italic">Desconocido / Anónimo</span>
+              </td>
+              <td class="py-3.5 px-4 whitespace-nowrap">
+                <span
+                  v-if="a.resultado === 'exito'"
+                  class="badge-status-activo"
+                >
+                  <i class="pi pi-check text-[10px] mr-1 text-emerald-600"></i>
+                  Inicio Autorizado
+                </span>
+                <span
+                  v-else
+                  class="badge-status-danger"
+                >
+                  <i class="pi pi-times text-[10px] mr-1 text-red-600"></i>
+                  Acceso Rechazado
+                </span>
+              </td>
+              <td class="py-3.5 px-4 font-mono text-slate-600 whitespace-nowrap">
+                {{ a.ip_origen ?? '—' }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-else class="py-16 text-center text-slate-500">
+          <i class="pi pi-shield text-3xl text-slate-300 mb-2"></i>
+          <p class="text-xs font-semibold text-slate-700">No hay eventos de acceso registrados para el período seleccionado</p>
+        </div>
+      </div>
+
+      <div class="px-4 py-3 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-500">
+        <span>Eventos registrados: {{ accesosFiltrados.length }}</span>
+        <span class="font-medium">Fundación Simón I. Patiño · Bitácora de Integridad</span>
+      </div>
+    </div>
   </div>
 </template>
-
-<style scoped>
-.reporte-accesos {
-  padding: 2rem;
-  font-family: system-ui, sans-serif;
-}
-
-.filtros {
-  display: flex;
-  gap: 1rem;
-  align-items: flex-end;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-}
-
-.filtros label {
-  display: flex;
-  flex-direction: column;
-  font-size: 0.85rem;
-  gap: 0.25rem;
-}
-
-.filtros input,
-.filtros select {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-}
-
-.filtros button {
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  background: #1f6feb;
-  color: white;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.filtros button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 1.5rem;
-}
-
-th,
-td {
-  padding: 0.6rem 0.8rem;
-  border-bottom: 1px solid #e0e0e0;
-  text-align: left;
-}
-
-th {
-  background: #f4f6f8;
-  font-weight: 600;
-}
-
-.resultado-exito {
-  color: #1a7f37;
-  font-weight: 600;
-}
-
-.resultado-rechazo {
-  color: #d1242f;
-  font-weight: 600;
-}
-
-.error {
-  color: #d33;
-  font-size: 0.85rem;
-}
-</style>

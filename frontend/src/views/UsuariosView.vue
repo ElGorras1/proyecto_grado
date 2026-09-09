@@ -36,6 +36,7 @@ const mensajeExito = ref('')
 // Filtros
 const filtroRol = ref('')
 const filtroEstado = ref('')
+const filtroBusqueda = ref('')
 
 // Modal Nuevo Usuario
 const modalCrearAbierto = ref(false)
@@ -87,6 +88,12 @@ const usuariosFiltrados = computed(() => {
   return usuarios.value.filter((u) => {
     if (filtroRol.value && u.rol !== filtroRol.value) return false
     if (filtroEstado.value && u.estado !== filtroEstado.value) return false
+    if (filtroBusqueda.value.trim()) {
+      const q = filtroBusqueda.value.toLowerCase()
+      const matchNombre = u.nombre.toLowerCase().includes(q)
+      const matchEmail = u.email.toLowerCase().includes(q)
+      if (!matchNombre && !matchEmail) return false
+    }
     return true
   })
 })
@@ -194,7 +201,7 @@ async function confirmarResetPassword() {
     })
     const nombre = usuarioSeleccionado.value.nombre
     cerrarModalReset()
-    mensajeExito.value = `Contraseña actualizada para ${nombre}`
+    mensajeExito.value = `Contraseña actualizada con éxito para ${nombre}`
     setTimeout(() => {
       mensajeExito.value = ''
     }, 4000)
@@ -213,178 +220,402 @@ onMounted(cargarDatos)
 </script>
 
 <template>
-  <div class="usuarios-view">
-    <header class="header">
+  <div class="space-y-6 max-w-7xl mx-auto font-sans">
+    <!-- ENCABEZADO -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
       <div>
-        <div class="breadcrumb">
-          <router-link to="/">Panel principal</router-link> &gt; Gestión de usuarios
-        </div>
-        <h1>Gestión de Usuarios</h1>
+        <h1 class="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
+          <i class="pi pi-users text-blue-600"></i>
+          <span>Gestión de Usuarios y Accesos</span>
+        </h1>
+        <p class="text-sm font-medium text-slate-500 mt-1">
+          Control de credenciales, roles RBAC y asignación de custodia por área
+        </p>
       </div>
-      <button class="btn btn-primary" @click="abrirModalCrear">
-        + Nuevo usuario
+
+      <button
+        class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs hover:shadow transition-all cursor-pointer self-start sm:self-auto"
+        @click="abrirModalCrear"
+      >
+        <i class="pi pi-user-plus text-xs"></i>
+        <span>Nuevo Usuario</span>
       </button>
-    </header>
-
-    <p v-if="error" class="alert alert-error">{{ error }}</p>
-    <p v-if="mensajeExito" class="alert alert-success">{{ mensajeExito }}</p>
-
-    <!-- Filtros -->
-    <div class="filtros">
-      <label>
-        Rol:
-        <select v-model="filtroRol">
-          <option value="">Todos los roles</option>
-          <option v-for="r in roles" :key="r.id" :value="r.nombre">
-            {{ r.nombre }}
-          </option>
-        </select>
-      </label>
-
-      <label>
-        Estado:
-        <select v-model="filtroEstado">
-          <option value="">Todos los estados</option>
-          <option value="activo">Activo</option>
-          <option value="baja">Baja</option>
-        </select>
-      </label>
     </div>
 
-    <!-- Tabla -->
-    <div v-if="cargando" class="cargando">Cargando usuarios...</div>
-    <div v-else class="table-container">
-      <table v-if="usuariosFiltrados.length > 0">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Nombre</th>
-            <th>Correo electrónico</th>
-            <th>Rol</th>
-            <th>Área</th>
-            <th>Estado</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="u in usuariosFiltrados" :key="u.id">
-            <td>{{ u.id }}</td>
-            <td class="bold">{{ u.nombre }}</td>
-            <td>{{ u.email }}</td>
-            <td><span class="badge badge-rol">{{ u.rol }}</span></td>
-            <td>{{ nombreArea(u.area_id) }}</td>
-            <td>
-              <span :class="['badge', u.estado === 'activo' ? 'badge-activo' : 'badge-baja']">
-                {{ u.estado === 'activo' ? 'Activo' : 'Baja' }}
-              </span>
-            </td>
-            <td class="acciones">
-              <button
-                :class="['btn btn-sm', u.estado === 'activo' ? 'btn-danger' : 'btn-success']"
-                @click="alternarEstado(u)"
-              >
-                {{ u.estado === 'activo' ? 'Desactivar' : 'Reactivar' }}
-              </button>
-              <button
-                class="btn btn-sm btn-outline"
-                @click="abrirModalReset(u)"
-              >
-                Resetear contraseña
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="vacio">No se encontraron usuarios con los criterios especificados.</p>
+    <!-- ALERTAS -->
+    <div
+      v-if="error"
+      class="p-4 rounded-xl bg-red-50 border border-red-200/80 text-xs font-medium text-red-700 flex items-center gap-3 animate-in fade-in"
+    >
+      <i class="pi pi-exclamation-circle text-red-600 shrink-0 text-base"></i>
+      <span>{{ error }}</span>
     </div>
 
-    <!-- Modal Crear Usuario -->
-    <div v-if="modalCrearAbierto" class="modal-backdrop">
-      <div class="modal">
-        <h2>Crear nuevo usuario</h2>
-        <form @submit.prevent="crearUsuario">
-          <label>
-            Nombre completo *
-            <input v-model="nuevoNombre" type="text" required placeholder="Ej: Juan Pérez" />
-          </label>
+    <div
+      v-if="mensajeExito"
+      class="p-4 rounded-xl bg-emerald-50 border border-emerald-200/80 text-xs font-medium text-emerald-800 flex items-center gap-3 animate-in fade-in"
+    >
+      <i class="pi pi-check-circle text-emerald-600 shrink-0 text-base"></i>
+      <span>{{ mensajeExito }}</span>
+    </div>
 
-          <label>
-            Correo electrónico *
-            <input v-model="nuevoEmail" type="email" required placeholder="ejemplo@simonpatino.com" />
-          </label>
+    <!-- FILTROS Y BÚSQUEDA -->
+    <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-4">
+      <div class="relative flex-1 min-w-[240px] max-w-md">
+        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+          <i class="pi pi-search text-xs"></i>
+        </span>
+        <input
+          v-model="filtroBusqueda"
+          type="text"
+          placeholder="Buscar por nombre o correo electrónico..."
+          class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+        />
+      </div>
 
-          <label>
-            Contraseña (mínimo 8 caracteres) *
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-1.5">
+          <label class="text-xs font-semibold text-slate-500">Rol:</label>
+          <select
+            v-model="filtroRol"
+            class="px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+          >
+            <option value="">Todos los roles</option>
+            <option v-for="r in roles" :key="r.id" :value="r.nombre">
+              {{ r.nombre }}
+            </option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-1.5">
+          <label class="text-xs font-semibold text-slate-500">Estado:</label>
+          <select
+            v-model="filtroEstado"
+            class="px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+          >
+            <option value="">Todos los estados</option>
+            <option value="activo">Activo</option>
+            <option value="baja">Baja</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- TABLA DE USUARIOS -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+      <div v-if="cargando" class="py-16 text-center text-slate-500">
+        <i class="pi pi-spin pi-spinner text-2xl text-blue-600 mb-2"></i>
+        <p class="text-xs font-medium">Cargando nómina de usuarios...</p>
+      </div>
+
+      <div v-else class="overflow-x-auto">
+        <table v-if="usuariosFiltrados.length > 0" class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-50 text-slate-700 font-semibold uppercase text-xs tracking-wider border-b border-slate-200">
+              <th class="py-3.5 px-4">ID</th>
+              <th class="py-3.5 px-4">Usuario</th>
+              <th class="py-3.5 px-4">Correo Electrónico</th>
+              <th class="py-3.5 px-4">Rol Asignado</th>
+              <th class="py-3.5 px-4">Área de Custodia</th>
+              <th class="py-3.5 px-4">Estado</th>
+              <th class="py-3.5 px-4 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 text-xs text-slate-700">
+            <tr
+              v-for="u in usuariosFiltrados"
+              :key="u.id"
+              class="hover:bg-slate-50/80 transition-colors"
+            >
+              <td class="py-3.5 px-4 font-mono text-slate-400">#{{ u.id }}</td>
+              <td class="py-3.5 px-4">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-7 h-7 rounded-full bg-slate-800 text-white font-bold text-[10px] flex items-center justify-center">
+                    {{ u.nombre.slice(0, 2).toUpperCase() }}
+                  </div>
+                  <span class="font-bold text-slate-900">{{ u.nombre }}</span>
+                </div>
+              </td>
+              <td class="py-3.5 px-4 text-slate-600 font-mono text-[11px]">
+                {{ u.email }}
+              </td>
+              <td class="py-3.5 px-4 whitespace-nowrap">
+                <span
+                  v-if="u.rol === 'Administrador'"
+                  class="badge-role-admin"
+                >
+                  👑 Administrador
+                </span>
+                <span
+                  v-else-if="u.rol === 'Operador'"
+                  class="badge-role-operador"
+                >
+                  🛠️ Operador
+                </span>
+                <span
+                  v-else-if="u.rol === 'Auditor'"
+                  class="badge-role-auditor"
+                >
+                  🔍 Auditor
+                </span>
+                <span
+                  v-else
+                  class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700"
+                >
+                  {{ u.rol }}
+                </span>
+              </td>
+              <td class="py-3.5 px-4 text-slate-600">
+                {{ nombreArea(u.area_id) }}
+              </td>
+              <td class="py-3.5 px-4">
+                <span :class="u.estado === 'activo' ? 'badge-status-activo' : 'badge-status-baja'">
+                  <span
+                    :class="[
+                      'w-1.5 h-1.5 rounded-full mr-1.5',
+                      u.estado === 'activo' ? 'bg-emerald-500' : 'bg-slate-400'
+                    ]"
+                  ></span>
+                  {{ u.estado === 'activo' ? 'Activo' : 'Baja' }}
+                </span>
+              </td>
+              <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                <div class="inline-flex items-center gap-1">
+                  <button
+                    type="button"
+                    class="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                    title="Resetear Contraseña"
+                    @click="abrirModalReset(u)"
+                  >
+                    <i class="pi pi-key text-xs"></i>
+                  </button>
+                  <button
+                    type="button"
+                    :class="[
+                      'p-1.5 rounded-lg transition-colors cursor-pointer',
+                      u.estado === 'activo'
+                        ? 'text-red-600 hover:text-red-800 hover:bg-red-50'
+                        : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50'
+                    ]"
+                    :title="u.estado === 'activo' ? 'Desactivar Cuenta' : 'Reactivar Cuenta'"
+                    @click="alternarEstado(u)"
+                  >
+                    <i :class="['pi text-xs', u.estado === 'activo' ? 'pi-user-minus' : 'pi-user-plus']"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-else class="py-16 text-center text-slate-500">
+          <i class="pi pi-inbox text-3xl text-slate-300 mb-2"></i>
+          <p class="text-xs font-semibold text-slate-700">No se encontraron usuarios registrados</p>
+        </div>
+      </div>
+
+      <div class="px-4 py-3 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-500">
+        <span>Mostrando {{ usuariosFiltrados.length }} usuarios en plantilla</span>
+        <span class="font-medium">Fundación Simón I. Patiño</span>
+      </div>
+    </div>
+
+    <!-- MODAL CREAR USUARIO -->
+    <div
+      v-if="modalCrearAbierto"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in">
+        <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold">
+              <i class="pi pi-user-plus"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">Crear Nuevo Usuario</h2>
+              <p class="text-[11px] text-slate-400">Credenciales y privilegios institucionales</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="text-slate-400 hover:text-white transition-colors cursor-pointer"
+            @click="cerrarModalCrear"
+          >
+            <i class="pi pi-times text-sm"></i>
+          </button>
+        </div>
+
+        <form class="p-6 space-y-4" @submit.prevent="crearUsuario">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">
+              Nombre Completo *
+            </label>
+            <input
+              v-model="nuevoNombre"
+              type="text"
+              required
+              placeholder="Ej: Lic. Marcelo Quiroga"
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">
+              Correo Electrónico *
+            </label>
+            <input
+              v-model="nuevoEmail"
+              type="email"
+              required
+              placeholder="mquiroga@simonpatino.com"
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">
+              Contraseña Inicial (mínimo 8 caracteres) *
+            </label>
             <input
               v-model="nuevoPassword"
               type="password"
               required
               minlength="8"
               placeholder="••••••••"
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
-          </label>
+          </div>
 
-          <label>
-            Rol *
-            <select v-model="nuevoRolId" required>
-              <option v-for="r in roles" :key="r.id" :value="r.id">
-                {{ r.nombre }}
-              </option>
-            </select>
-          </label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">
+                Rol Asignado *
+              </label>
+              <select
+                v-model="nuevoRolId"
+                required
+                class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              >
+                <option v-for="r in roles" :key="r.id" :value="r.id">
+                  {{ r.nombre }}
+                </option>
+              </select>
+            </div>
 
-          <label>
-            Área asignada (opcional)
-            <select v-model="nuevoAreaId">
-              <option value="">Sin área específica</option>
-              <option v-for="a in areas" :key="a.id" :value="a.id">
-                {{ a.nombre }}
-              </option>
-            </select>
-          </label>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">
+                Área Asignada
+              </label>
+              <select
+                v-model="nuevoAreaId"
+                class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              >
+                <option value="">Sin área específica</option>
+                <option v-for="a in areas" :key="a.id" :value="a.id">
+                  {{ a.nombre }}
+                </option>
+              </select>
+            </div>
+          </div>
 
-          <p v-if="errorCrear" class="alert alert-error">{{ errorCrear }}</p>
+          <div
+            v-if="errorCrear"
+            class="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2"
+          >
+            <i class="pi pi-exclamation-circle text-red-600"></i>
+            <span>{{ errorCrear }}</span>
+          </div>
 
-          <div class="modal-actions">
-            <button type="button" class="btn btn-outline" @click="cerrarModalCrear">
+          <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              class="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+              @click="cerrarModalCrear"
+            >
               Cancelar
             </button>
-            <button type="submit" class="btn btn-primary" :disabled="guardandoUsuario">
-              {{ guardandoUsuario ? 'Guardando...' : 'Crear usuario' }}
+            <button
+              type="submit"
+              :disabled="guardandoUsuario"
+              class="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs hover:shadow transition-all disabled:opacity-60 flex items-center gap-2 cursor-pointer"
+            >
+              <i v-if="guardandoUsuario" class="pi pi-spin pi-spinner text-xs"></i>
+              <span>{{ guardandoUsuario ? 'Registrando...' : 'Crear Usuario' }}</span>
             </button>
           </div>
         </form>
       </div>
     </div>
 
-    <!-- Modal Resetear Contraseña -->
-    <div v-if="modalResetAbierto" class="modal-backdrop">
-      <div class="modal">
-        <h2>Resetear contraseña</h2>
-        <p v-if="usuarioSeleccionado" class="modal-desc">
-          Restablecer contraseña para <strong>{{ usuarioSeleccionado.nombre }}</strong> ({{ usuarioSeleccionado.email }}).
-        </p>
+    <!-- MODAL RESETEAR CONTRASEÑA -->
+    <div
+      v-if="modalResetAbierto"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in">
+        <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+              <i class="pi pi-key"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">Resetear Contraseña</h2>
+              <p class="text-[11px] text-slate-400">Actualizar clave de acceso de usuario</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="text-slate-400 hover:text-white transition-colors cursor-pointer"
+            @click="cerrarModalReset"
+          >
+            <i class="pi pi-times text-sm"></i>
+          </button>
+        </div>
 
-        <form @submit.prevent="confirmarResetPassword">
-          <label>
-            Nueva contraseña (mínimo 8 caracteres) *
+        <form class="p-6 space-y-4" @submit.prevent="confirmarResetPassword">
+          <div v-if="usuarioSeleccionado" class="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-700">
+            <span>Usuario a restablecer: </span>
+            <strong class="font-bold text-slate-900">{{ usuarioSeleccionado.nombre }}</strong>
+            <span class="block text-slate-500 mt-0.5">({{ usuarioSeleccionado.email }})</span>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">
+              Nueva Contraseña (mínimo 8 caracteres) *
+            </label>
             <input
               v-model="nuevoPasswordReset"
               type="password"
               required
               minlength="8"
-              placeholder="Nueva contraseña segura"
+              placeholder="Nueva clave segura"
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
-          </label>
+          </div>
 
-          <p v-if="errorReset" class="alert alert-error">{{ errorReset }}</p>
+          <div
+            v-if="errorReset"
+            class="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2"
+          >
+            <i class="pi pi-exclamation-circle text-red-600"></i>
+            <span>{{ errorReset }}</span>
+          </div>
 
-          <div class="modal-actions">
-            <button type="button" class="btn btn-outline" @click="cerrarModalReset">
+          <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              class="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+              @click="cerrarModalReset"
+            >
               Cancelar
             </button>
-            <button type="submit" class="btn btn-primary" :disabled="reseteandoPassword">
-              {{ reseteandoPassword ? 'Restableciendo...' : 'Restablecer contraseña' }}
+            <button
+              type="submit"
+              :disabled="reseteandoPassword"
+              class="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs hover:shadow transition-all disabled:opacity-60 flex items-center gap-2 cursor-pointer"
+            >
+              <i v-if="reseteandoPassword" class="pi pi-spin pi-spinner text-xs"></i>
+              <span>{{ reseteandoPassword ? 'Actualizando...' : 'Restablecer Clave' }}</span>
             </button>
           </div>
         </form>
@@ -392,274 +623,3 @@ onMounted(cargarDatos)
     </div>
   </div>
 </template>
-
-<style scoped>
-.usuarios-view {
-  padding: 2rem;
-  font-family: system-ui, sans-serif;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-}
-
-.breadcrumb {
-  font-size: 0.85rem;
-  color: #666;
-  margin-bottom: 0.25rem;
-}
-
-.breadcrumb a {
-  color: #0969da;
-  text-decoration: none;
-}
-
-.breadcrumb a:hover {
-  text-decoration: underline;
-}
-
-h1 {
-  margin: 0;
-  font-size: 1.6rem;
-}
-
-.alert {
-  padding: 0.75rem 1rem;
-  border-radius: 6px;
-  margin-bottom: 1rem;
-  font-size: 0.9rem;
-}
-
-.alert-error {
-  background: #ffebe9;
-  color: #cf222e;
-  border: 1px solid #ff8182;
-}
-
-.alert-success {
-  background: #dafbe1;
-  color: #1a7f37;
-  border: 1px solid #4ac26b;
-}
-
-.filtros {
-  display: flex;
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
-  background: #f6f8fa;
-  padding: 1rem;
-  border-radius: 8px;
-  border: 1px solid #d0d7de;
-}
-
-.filtros label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #444;
-}
-
-.filtros select {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: white;
-  min-width: 160px;
-}
-
-.table-container {
-  overflow-x: auto;
-  border: 1px solid #e1e4e8;
-  border-radius: 8px;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th, td {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #e1e4e8;
-  text-align: left;
-  font-size: 0.9rem;
-}
-
-th {
-  background: #f6f8fa;
-  font-weight: 600;
-}
-
-.bold {
-  font-weight: 600;
-}
-
-.badge {
-  display: inline-block;
-  padding: 0.2rem 0.55rem;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.badge-rol {
-  background: #ddf4ff;
-  color: #0969da;
-  border: 1px solid #54aeff;
-}
-
-.badge-activo {
-  background: #dafbe1;
-  color: #1a7f37;
-  border: 1px solid #4ac26b;
-}
-
-.badge-baja {
-  background: #f6f8fa;
-  color: #656d76;
-  border: 1px solid #d0d7de;
-}
-
-.acciones {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn {
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.85rem;
-  transition: background 0.15s;
-}
-
-.btn-sm {
-  padding: 0.35rem 0.65rem;
-  font-size: 0.8rem;
-}
-
-.btn-primary {
-  background: #1f6feb;
-  color: white;
-}
-
-.btn-primary:hover {
-  background: #1158c7;
-}
-
-.btn-danger {
-  background: #ffebe9;
-  color: #cf222e;
-  border: 1px solid #ff8182;
-}
-
-.btn-danger:hover {
-  background: #ff8182;
-  color: white;
-}
-
-.btn-success {
-  background: #dafbe1;
-  color: #1a7f37;
-  border: 1px solid #4ac26b;
-}
-
-.btn-success:hover {
-  background: #4ac26b;
-  color: white;
-}
-
-.btn-outline {
-  background: white;
-  color: #24292f;
-  border: 1px solid #d0d7de;
-}
-
-.btn-outline:hover {
-  background: #f3f4f6;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.modal-backdrop {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal {
-  background: white;
-  padding: 1.75rem;
-  border-radius: 10px;
-  width: 100%;
-  max-width: 460px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-}
-
-.modal h2 {
-  margin-top: 0;
-  margin-bottom: 1rem;
-  font-size: 1.3rem;
-}
-
-.modal-desc {
-  font-size: 0.9rem;
-  color: #555;
-  margin-bottom: 1rem;
-}
-
-.modal form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-}
-
-.modal label {
-  display: flex;
-  flex-direction: column;
-  font-size: 0.85rem;
-  font-weight: 600;
-  gap: 0.3rem;
-  color: #333;
-}
-
-.modal input,
-.modal select {
-  padding: 0.5rem 0.7rem;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  font-size: 0.9rem;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
-}
-
-.cargando, .vacio {
-  padding: 2rem;
-  text-align: center;
-  color: #666;
-}
-</style>

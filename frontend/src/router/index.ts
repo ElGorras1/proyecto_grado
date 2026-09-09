@@ -35,6 +35,30 @@ const router = createRouter({
       meta: { roles: ['Administrador'] },
     },
     {
+      path: '/categorias',
+      name: 'categorias',
+      component: () => import('@/views/CategoriasView.vue'),
+      meta: { roles: ['Administrador', 'Operador'] },
+    },
+    {
+      path: '/activos',
+      name: 'activos',
+      component: () => import('@/views/ActivosView.vue'),
+      meta: { roles: ['Administrador', 'Operador'] },
+    },
+    {
+      path: '/existencias',
+      name: 'existencias',
+      component: () => import('@/views/ExistenciasView.vue'),
+      meta: { roles: ['Administrador', 'Operador'] },
+    },
+    {
+      path: '/reportes/inventario',
+      name: 'reporteInventario',
+      component: () => import('@/views/ReporteInventarioView.vue'),
+      meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
+    },
+    {
       path: '/reportes/accesos',
       name: 'reporteAccesos',
       component: () => import('@/views/ReporteAccesosView.vue'),

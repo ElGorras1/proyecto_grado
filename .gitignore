@@ -7,6 +7,7 @@ backend/*.egg-info/
 backend/.pytest_cache/
 backend/migrations/__pycache__/
 backend/*.db
+backend/storage/
 
 # Frontend
 frontend/node_modules/

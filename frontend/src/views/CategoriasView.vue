@@ -2,8 +2,9 @@
 import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import api from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
 
-interface Area {
+interface CategoriaActivo {
   id: number
   nombre: string
   codigo: string | null
@@ -11,7 +12,9 @@ interface Area {
   estado: string
 }
 
-const areas = ref<Area[]>([])
+const auth = useAuthStore()
+
+const categorias = ref<CategoriaActivo[]>([])
 const cargando = ref(false)
 const error = ref('')
 const mensajeExito = ref('')
@@ -20,40 +23,40 @@ const mensajeExito = ref('')
 const filtroEstado = ref('')
 const filtroBusqueda = ref('')
 
-// Modal Crear/Editar Área
+// Modal Crear/Editar
 const modalAbierto = ref(false)
 const esEdicion = ref(false)
-const areaEditandoId = ref<number | null>(null)
+const categoriaEditandoId = ref<number | null>(null)
 const formNombre = ref('')
 const formCodigo = ref('')
 const formDescripcion = ref('')
 const guardando = ref(false)
 const errorModal = ref('')
 
-async function cargarAreas() {
+async function cargarCategorias() {
   cargando.value = true
   error.value = ''
   try {
-    const { data } = await api.get('/areas')
-    areas.value = data
+    const { data } = await api.get('/categorias')
+    categorias.value = data
   } catch (err) {
     if (axios.isAxiosError(err)) {
-      error.value = err.response?.data?.detail || 'Error al cargar las áreas'
+      error.value = err.response?.data?.detail || 'Error al cargar las categorías'
     } else {
-      error.value = 'Error al cargar las áreas'
+      error.value = 'Error al cargar las categorías'
     }
   } finally {
     cargando.value = false
   }
 }
 
-const areasFiltradas = computed(() => {
-  return areas.value.filter((a) => {
-    if (filtroEstado.value && a.estado !== filtroEstado.value) return false
+const categoriasFiltradas = computed(() => {
+  return categorias.value.filter((c) => {
+    if (filtroEstado.value && c.estado !== filtroEstado.value) return false
     if (filtroBusqueda.value.trim()) {
       const q = filtroBusqueda.value.toLowerCase()
-      const matchNombre = a.nombre.toLowerCase().includes(q)
-      const matchCodigo = (a.codigo ?? '').toLowerCase().includes(q)
+      const matchNombre = c.nombre.toLowerCase().includes(q)
+      const matchCodigo = (c.codigo ?? '').toLowerCase().includes(q)
       if (!matchNombre && !matchCodigo) return false
     }
     return true
@@ -62,7 +65,7 @@ const areasFiltradas = computed(() => {
 
 function abrirModalCrear() {
   esEdicion.value = false
-  areaEditandoId.value = null
+  categoriaEditandoId.value = null
   formNombre.value = ''
   formCodigo.value = ''
   formDescripcion.value = ''
@@ -70,24 +73,24 @@ function abrirModalCrear() {
   modalAbierto.value = true
 }
 
-function abrirModalEditar(area: Area) {
+function abrirModalEditar(cat: CategoriaActivo) {
   esEdicion.value = true
-  areaEditandoId.value = area.id
-  formNombre.value = area.nombre
-  formCodigo.value = area.codigo ?? ''
-  formDescripcion.value = area.descripcion ?? ''
+  categoriaEditandoId.value = cat.id
+  formNombre.value = cat.nombre
+  formCodigo.value = cat.codigo ?? ''
+  formDescripcion.value = cat.descripcion ?? ''
   errorModal.value = ''
   modalAbierto.value = true
 }
 
 function cerrarModal() {
   modalAbierto.value = false
-  areaEditandoId.value = null
+  categoriaEditandoId.value = null
 }
 
-async function guardarArea() {
+async function guardarCategoria() {
   if (!formNombre.value.trim()) {
-    errorModal.value = 'El nombre del área es obligatorio.'
+    errorModal.value = 'El nombre de la categoría es obligatorio.'
     return
   }
 
@@ -100,55 +103,55 @@ async function guardarArea() {
       descripcion: formDescripcion.value.trim() || null,
     }
 
-    if (esEdicion.value && areaEditandoId.value !== null) {
-      await api.put(`/areas/${areaEditandoId.value}`, payload)
-      mensajeExito.value = 'Área actualizada con éxito'
+    if (esEdicion.value && categoriaEditandoId.value !== null) {
+      await api.put(`/categorias/${categoriaEditandoId.value}`, payload)
+      mensajeExito.value = 'Categoría actualizada con éxito'
     } else {
-      await api.post('/areas', payload)
-      mensajeExito.value = 'Área creada con éxito'
+      await api.post('/categorias', payload)
+      mensajeExito.value = 'Categoría creada con éxito'
     }
 
     cerrarModal()
     setTimeout(() => {
       mensajeExito.value = ''
     }, 4000)
-    await cargarAreas()
+    await cargarCategorias()
   } catch (err) {
     if (axios.isAxiosError(err)) {
-      errorModal.value = err.response?.data?.detail || 'Error al guardar el área'
+      errorModal.value = err.response?.data?.detail || 'Error al guardar la categoría'
     } else {
-      errorModal.value = 'Error al guardar el área'
+      errorModal.value = 'Error al guardar la categoría'
     }
   } finally {
     guardando.value = false
   }
 }
 
-async function alternarEstado(area: Area) {
+async function alternarEstado(cat: CategoriaActivo) {
   error.value = ''
   mensajeExito.value = ''
   try {
-    if (area.estado === 'activo') {
-      await api.patch(`/areas/${area.id}/desactivar`)
-      mensajeExito.value = `Área "${area.nombre}" desactivada (baja lógica)`
+    if (cat.estado === 'activo') {
+      await api.patch(`/categorias/${cat.id}/desactivar`)
+      mensajeExito.value = `Categoría "${cat.nombre}" desactivada (baja lógica)`
     } else {
-      await api.patch(`/areas/${area.id}/reactivar`)
-      mensajeExito.value = `Área "${area.nombre}" reactivada`
+      await api.patch(`/categorias/${cat.id}/reactivar`)
+      mensajeExito.value = `Categoría "${cat.nombre}" reactivada`
     }
     setTimeout(() => {
       mensajeExito.value = ''
     }, 4000)
-    await cargarAreas()
+    await cargarCategorias()
   } catch (err) {
     if (axios.isAxiosError(err)) {
-      error.value = err.response?.data?.detail || 'Error al cambiar estado del área'
+      error.value = err.response?.data?.detail || 'Error al cambiar estado de la categoría'
     } else {
-      error.value = 'Error al cambiar estado del área'
+      error.value = 'Error al cambiar estado de la categoría'
     }
   }
 }
 
-onMounted(cargarAreas)
+onMounted(cargarCategorias)
 </script>
 
 <template>
@@ -157,20 +160,21 @@ onMounted(cargarAreas)
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
       <div>
         <h1 class="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
-          <i class="pi pi-sitemap text-blue-600"></i>
-          <span>Gestión de Áreas y Sedes</span>
+          <i class="pi pi-tags text-blue-600"></i>
+          <span>Categorías de Activos</span>
         </h1>
         <p class="text-sm font-medium text-slate-500 mt-1">
-          Estructura física de recintos, almacenes y dependencias de la Fundación Simón I. Patiño
+          Estructura de clasificación patrimonial y operativa de la Fundación
         </p>
       </div>
 
       <button
+        v-if="auth.rol === 'Administrador'"
         class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs hover:shadow transition-all cursor-pointer self-start sm:self-auto"
         @click="abrirModalCrear"
       >
         <i class="pi pi-plus text-xs"></i>
-        <span>Nueva Área / Sede</span>
+        <span>Nueva Categoría</span>
       </button>
     </div>
 
@@ -200,7 +204,7 @@ onMounted(cargarAreas)
         <input
           v-model="filtroBusqueda"
           type="text"
-          placeholder="Buscar área por denominación o código..."
+          placeholder="Buscar categoría por nombre o código..."
           class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
         />
       </div>
@@ -213,66 +217,66 @@ onMounted(cargarAreas)
         >
           <option value="">Todos los estados</option>
           <option value="activo">Activo</option>
-          <option value="baja">Baja</option>
+          <option value="baja">Baja Lógica</option>
         </select>
       </div>
     </div>
 
-    <!-- TABLA DE ÁREAS -->
+    <!-- TABLA DE CATEGORÍAS -->
     <div class="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
       <div v-if="cargando" class="py-16 text-center text-slate-500">
         <i class="pi pi-spin pi-spinner text-2xl text-blue-600 mb-2"></i>
-        <p class="text-xs font-medium">Cargando áreas y sedes...</p>
+        <p class="text-xs font-medium">Cargando categorías...</p>
       </div>
 
       <div v-else class="overflow-x-auto">
-        <table v-if="areasFiltradas.length > 0" class="w-full text-left border-collapse">
+        <table v-if="categoriasFiltradas.length > 0" class="w-full text-left border-collapse">
           <thead>
             <tr class="bg-slate-50 text-slate-700 font-semibold uppercase text-xs tracking-wider border-b border-slate-200">
               <th class="py-3.5 px-4">ID</th>
               <th class="py-3.5 px-4">Código</th>
-              <th class="py-3.5 px-4">Nombre de la Sede / Área</th>
-              <th class="py-3.5 px-4">Descripción y Propósito</th>
+              <th class="py-3.5 px-4">Nombre de la Categoría</th>
+              <th class="py-3.5 px-4">Descripción</th>
               <th class="py-3.5 px-4">Estado</th>
-              <th class="py-3.5 px-4 text-right">Acciones</th>
+              <th v-if="auth.rol === 'Administrador'" class="py-3.5 px-4 text-right">Acciones</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 text-xs text-slate-700">
             <tr
-              v-for="a in areasFiltradas"
-              :key="a.id"
+              v-for="c in categoriasFiltradas"
+              :key="c.id"
               class="hover:bg-slate-50/80 transition-colors"
             >
-              <td class="py-3.5 px-4 font-mono text-slate-400">#{{ a.id }}</td>
+              <td class="py-3.5 px-4 font-mono text-slate-400">#{{ c.id }}</td>
               <td class="py-3.5 px-4 whitespace-nowrap">
                 <span class="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded text-[11px] border border-slate-200">
-                  {{ a.codigo ?? '—' }}
+                  {{ c.codigo ?? '—' }}
                 </span>
               </td>
               <td class="py-3.5 px-4 font-semibold text-slate-900">
-                {{ a.nombre }}
+                {{ c.nombre }}
               </td>
               <td class="py-3.5 px-4 text-slate-500 max-w-sm truncate">
-                {{ a.descripcion ?? 'Sin descripción adicional' }}
+                {{ c.descripcion ?? 'Sin descripción adicional' }}
               </td>
               <td class="py-3.5 px-4">
-                <span :class="a.estado === 'activo' ? 'badge-status-activo' : 'badge-status-baja'">
+                <span :class="c.estado === 'activo' ? 'badge-status-activo' : 'badge-status-baja'">
                   <span
                     :class="[
                       'w-1.5 h-1.5 rounded-full mr-1.5',
-                      a.estado === 'activo' ? 'bg-emerald-500' : 'bg-slate-400'
+                      c.estado === 'activo' ? 'bg-emerald-500' : 'bg-slate-400'
                     ]"
                   ></span>
-                  {{ a.estado === 'activo' ? 'Activo' : 'Baja' }}
+                  {{ c.estado === 'activo' ? 'Activo' : 'Baja' }}
                 </span>
               </td>
-              <td class="py-3.5 px-4 text-right whitespace-nowrap">
+              <td v-if="auth.rol === 'Administrador'" class="py-3.5 px-4 text-right whitespace-nowrap">
                 <div class="inline-flex items-center gap-1">
                   <button
                     type="button"
                     class="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                    title="Editar área"
-                    @click="abrirModalEditar(a)"
+                    title="Editar categoría"
+                    @click="abrirModalEditar(c)"
                   >
                     <i class="pi pi-pencil text-xs"></i>
                   </button>
@@ -280,14 +284,14 @@ onMounted(cargarAreas)
                     type="button"
                     :class="[
                       'p-1.5 rounded-lg transition-colors cursor-pointer',
-                      a.estado === 'activo'
+                      c.estado === 'activo'
                         ? 'text-red-600 hover:text-red-800 hover:bg-red-50'
                         : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50'
                     ]"
-                    :title="a.estado === 'activo' ? 'Desactivar Área' : 'Reactivar Área'"
-                    @click="alternarEstado(a)"
+                    :title="c.estado === 'activo' ? 'Desactivar Categoría' : 'Reactivar Categoría'"
+                    @click="alternarEstado(c)"
                   >
-                    <i :class="['pi text-xs', a.estado === 'activo' ? 'pi-ban' : 'pi-replay']"></i>
+                    <i :class="['pi text-xs', c.estado === 'activo' ? 'pi-ban' : 'pi-replay']"></i>
                   </button>
                 </div>
               </td>
@@ -297,17 +301,17 @@ onMounted(cargarAreas)
 
         <div v-else class="py-16 text-center text-slate-500">
           <i class="pi pi-inbox text-3xl text-slate-300 mb-2"></i>
-          <p class="text-xs font-semibold text-slate-700">No se encontraron áreas registradas</p>
+          <p class="text-xs font-semibold text-slate-700">No se encontraron categorías</p>
         </div>
       </div>
 
       <div class="px-4 py-3 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-500">
-        <span>Mostrando {{ areasFiltradas.length }} áreas registradas</span>
+        <span>Mostrando {{ categoriasFiltradas.length }} categorías</span>
         <span class="font-medium">Fundación Simón I. Patiño</span>
       </div>
     </div>
 
-    <!-- MODAL CREAR / EDITAR ÁREA -->
+    <!-- MODAL CREAR / EDITAR CATEGORÍA -->
     <div
       v-if="modalAbierto"
       class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto"
@@ -320,9 +324,9 @@ onMounted(cargarAreas)
             </div>
             <div>
               <h2 class="text-sm font-bold text-white">
-                {{ esEdicion ? 'Editar Área / Sede' : 'Crear Nueva Área o Sede' }}
+                {{ esEdicion ? 'Editar Categoría' : 'Crear Nueva Categoría' }}
               </h2>
-              <p class="text-[11px] text-slate-400">Espacio físico o centro institucional</p>
+              <p class="text-[11px] text-slate-400">Clasificación para el catálogo de activos</p>
             </div>
           </div>
           <button
@@ -334,40 +338,40 @@ onMounted(cargarAreas)
           </button>
         </div>
 
-        <form class="p-6 space-y-4" @submit.prevent="guardarArea">
+        <form class="p-6 space-y-4" @submit.prevent="guardarCategoria">
           <div>
             <label class="block text-xs font-semibold text-slate-700 mb-1">
-              Nombre de la Sede / Área *
+              Nombre de la Categoría *
             </label>
             <input
               v-model="formNombre"
               type="text"
               required
-              placeholder="Ej: Galería de Arte Simón I. Patiño"
+              placeholder="Ej: Obras de Arte y Esculturas"
               class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
           </div>
 
           <div>
             <label class="block text-xs font-semibold text-slate-700 mb-1">
-              Código / Sigla (opcional)
+              Código / Prefijo (opcional)
             </label>
             <input
               v-model="formCodigo"
               type="text"
-              placeholder="Ej: GAL-ART"
+              placeholder="Ej: CAT-ART"
               class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
           </div>
 
           <div>
             <label class="block text-xs font-semibold text-slate-700 mb-1">
-              Descripción y Propósito (opcional)
+              Descripción (opcional)
             </label>
             <textarea
               v-model="formDescripcion"
               rows="3"
-              placeholder="Ubicación física, uso o responsable del área..."
+              placeholder="Descripción del alcance de esta categoría..."
               class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
             ></textarea>
           </div>
@@ -394,7 +398,7 @@ onMounted(cargarAreas)
               class="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs hover:shadow transition-all disabled:opacity-60 flex items-center gap-2 cursor-pointer"
             >
               <i v-if="guardando" class="pi pi-spin pi-spinner text-xs"></i>
-              <span>{{ guardando ? 'Guardando...' : (esEdicion ? 'Actualizar Área' : 'Crear Área') }}</span>
+              <span>{{ guardando ? 'Guardando...' : (esEdicion ? 'Actualizar Categoría' : 'Crear Categoría') }}</span>
             </button>
           </div>
         </form>

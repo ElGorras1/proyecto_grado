@@ -81,3 +81,21 @@ def usuario_operador(db_session):
     db_session.add(usuario)
     db_session.commit()
     return usuario
+
+
+@pytest.fixture
+def usuario_auditor(db_session):
+    rol = Rol(nombre="Auditor", descripcion="Rol auditor", estado="activo")
+    db_session.add(rol)
+    db_session.commit()
+
+    usuario = Usuario(
+        rol_id=rol.id,
+        nombre="Auditor de prueba",
+        email="auditor@test.com",
+        password_hash=hash_password("Password123!"),
+        estado="activo",
+    )
+    db_session.add(usuario)
+    db_session.commit()
+    return usuario
