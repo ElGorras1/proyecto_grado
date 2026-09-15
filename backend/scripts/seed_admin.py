@@ -23,7 +23,7 @@ def main():
             print("ERROR: no existe el rol 'Administrador'. Ejecuta primero initial_schema.sql")
             return
 
-        email = "admin@simonpatino.test"
+        email = "admin@simonpatino.com"
         existente = db.query(Usuario).filter(Usuario.email == email).first()
         if existente:
             print(f"Ya existe un usuario con email {email}")

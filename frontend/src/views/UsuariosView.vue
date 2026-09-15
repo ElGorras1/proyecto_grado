@@ -19,16 +19,8 @@ interface Rol {
   descripcion?: string | null
 }
 
-interface Area {
-  id: number
-  nombre: string
-  codigo?: string | null
-  estado: string
-}
-
 const usuarios = ref<Usuario[]>([])
 const roles = ref<Rol[]>([])
-const areas = ref<Area[]>([])
 const cargando = ref(false)
 const error = ref('')
 const mensajeExito = ref('')
@@ -43,7 +35,6 @@ const nuevoNombre = ref('')
 const nuevoEmail = ref('')
 const nuevoPassword = ref('')
 const nuevoRolId = ref<number | ''>('')
-const nuevoAreaId = ref<number | ''>('')
 const guardandoUsuario = ref(false)
 const errorCrear = ref('')
 
@@ -58,14 +49,12 @@ async function cargarDatos() {
   cargando.value = true
   error.value = ''
   try {
-    const [respUsuarios, respRoles, respAreas] = await Promise.all([
+    const [respUsuarios, respRoles] = await Promise.all([
       api.get('/usuarios'),
       api.get('/usuarios/roles'),
-      api.get('/areas'),
     ])
     usuarios.value = respUsuarios.data
     roles.value = respRoles.data
-    areas.value = respAreas.data
   } catch (err) {
     if (axios.isAxiosError(err)) {
       error.value = err.response?.data?.detail || 'Error al cargar los usuarios'
@@ -75,12 +64,6 @@ async function cargarDatos() {
   } finally {
     cargando.value = false
   }
-}
-
-function nombreArea(areaId: number | null): string {
-  if (!areaId) return '—'
-  const area = areas.value.find((a) => a.id === areaId)
-  return area ? area.nombre : `Área #${areaId}`
 }
 
 const usuariosFiltrados = computed(() => {
@@ -96,7 +79,6 @@ function abrirModalCrear() {
   nuevoEmail.value = ''
   nuevoPassword.value = ''
   nuevoRolId.value = roles.value.length > 0 ? roles.value[0].id : ''
-  nuevoAreaId.value = ''
   errorCrear.value = ''
   modalCrearAbierto.value = true
 }
@@ -123,7 +105,6 @@ async function crearUsuario() {
       email: nuevoEmail.value.trim(),
       password: nuevoPassword.value,
       rol_id: Number(nuevoRolId.value),
-      area_id: nuevoAreaId.value === '' ? null : Number(nuevoAreaId.value),
     }
     await api.post('/usuarios', payload)
     cerrarModalCrear()
@@ -214,17 +195,14 @@ onMounted(cargarDatos)
 
 <template>
   <div class="usuarios-view">
-    <header class="header">
-      <div>
-        <div class="breadcrumb">
-          <router-link to="/">Panel principal</router-link> &gt; Gestión de usuarios
-        </div>
-        <h1>Gestión de Usuarios</h1>
-      </div>
+    <div class="header-nav">
+      <router-link to="/" class="btn-back"><i class="pi pi-arrow-left"></i> Volver</router-link>
+      <h1>Gestión de Usuarios</h1>
+      <div style="flex-grow: 1"></div>
       <button class="btn btn-primary" @click="abrirModalCrear">
         + Nuevo usuario
       </button>
-    </header>
+    </div>
 
     <p v-if="error" class="alert alert-error">{{ error }}</p>
     <p v-if="mensajeExito" class="alert alert-success">{{ mensajeExito }}</p>
@@ -261,7 +239,6 @@ onMounted(cargarDatos)
             <th>Nombre</th>
             <th>Correo electrónico</th>
             <th>Rol</th>
-            <th>Área</th>
             <th>Estado</th>
             <th>Acciones</th>
           </tr>
@@ -272,7 +249,6 @@ onMounted(cargarDatos)
             <td class="bold">{{ u.nombre }}</td>
             <td>{{ u.email }}</td>
             <td><span class="badge badge-rol">{{ u.rol }}</span></td>
-            <td>{{ nombreArea(u.area_id) }}</td>
             <td>
               <span :class="['badge', u.estado === 'activo' ? 'badge-activo' : 'badge-baja']">
                 {{ u.estado === 'activo' ? 'Activo' : 'Baja' }}
@@ -329,16 +305,6 @@ onMounted(cargarDatos)
             <select v-model="nuevoRolId" required>
               <option v-for="r in roles" :key="r.id" :value="r.id">
                 {{ r.nombre }}
-              </option>
-            </select>
-          </label>
-
-          <label>
-            Área asignada (opcional)
-            <select v-model="nuevoAreaId">
-              <option value="">Sin área específica</option>
-              <option v-for="a in areas" :key="a.id" :value="a.id">
-                {{ a.nombre }}
               </option>
             </select>
           </label>

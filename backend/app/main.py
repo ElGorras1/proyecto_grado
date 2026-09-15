@@ -21,6 +21,9 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+from fastapi.staticfiles import StaticFiles
+import os
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
@@ -28,6 +31,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+os.makedirs("storage/kardex_images", exist_ok=True)
+app.mount("/storage", StaticFiles(directory="storage"), name="storage")
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 

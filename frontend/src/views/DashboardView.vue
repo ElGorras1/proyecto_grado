@@ -22,7 +22,7 @@ function cerrarSesion() {
       <h1>Panel principal</h1>
       <div>
         <span v-if="auth.usuario">{{ auth.usuario.nombre }} · {{ auth.usuario.rol }}</span>
-        <button @click="cerrarSesion">Cerrar sesión</button>
+        <button class="btn-outline" @click="cerrarSesion">Cerrar sesión</button>
       </div>
     </header>
 
@@ -36,12 +36,16 @@ function cerrarSesion() {
         Gestión de usuarios
       </router-link>
 
-      <router-link v-if="auth.rol === 'Administrador'" :to="{ name: 'areas' }" class="nav-item">
-        Gestión de áreas
-      </router-link>
-
       <router-link v-if="auth.rol === 'Administrador'" :to="{ name: 'admin' }" class="nav-item">
         Panel de administración
+      </router-link>
+
+      <router-link :to="{ name: 'kardexDigital' }" class="nav-item">
+        Kárdex Digital Continuo
+      </router-link>
+
+      <router-link :to="{ name: 'inventarioVivo' }" class="nav-item">
+        Inventario Actual en Vivo
       </router-link>
 
       <router-link

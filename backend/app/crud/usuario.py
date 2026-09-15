@@ -7,7 +7,7 @@ from app.core.security import verify_password
 
 
 def get_usuario_by_email(db: Session, email: str) -> Usuario | None:
-    return db.query(Usuario).filter(Usuario.email == email, Usuario.estado == "activo").first()
+    return db.query(Usuario).filter(Usuario.email == email).first()
 
 
 def get_usuario_by_id(db: Session, usuario_id: int) -> Usuario | None:

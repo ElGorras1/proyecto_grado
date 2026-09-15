@@ -29,16 +29,22 @@ const router = createRouter({
       meta: { roles: ['Administrador'] },
     },
     {
-      path: '/areas',
-      name: 'areas',
-      component: () => import('@/views/AreasView.vue'),
-      meta: { roles: ['Administrador'] },
-    },
-    {
       path: '/reportes/accesos',
       name: 'reporteAccesos',
       component: () => import('@/views/ReporteAccesosView.vue'),
       meta: { roles: ['Administrador', 'Auditor'] },
+    },
+    {
+      path: '/kardex-digital',
+      name: 'kardexDigital',
+      component: () => import('@/views/KardexContinuoView.vue'),
+      meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
+    },
+    {
+      path: '/inventario-vivo',
+      name: 'inventarioVivo',
+      component: () => import('@/views/InventarioActualView.vue'),
+      meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
     },
     {
       path: '/403',

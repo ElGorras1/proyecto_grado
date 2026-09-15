@@ -510,3 +510,9 @@ COMMIT;
 -- ============================================================
 -- FIN DEL ESQUEMA INICIAL
 -- ============================================================
+
+ - -   K a r d e x   C o n t i n u o 
+ C R E A T E   T A B L E   I F   N O T   E X I S T S   l o t e s _ c a r g a   (   i d   S E R I A L   P R I M A R Y   K E Y ,   f e c h a _ e s c a n e o   T I M E S T A M P T Z   D E F A U L T   C U R R E N T _ T I M E S T A M P ,   t o t a l _ i m a g e n e s   I N T   N O T   N U L L   ) ; 
+ 
+ C R E A T E   T A B L E   I F   N O T   E X I S T S   m o v i m i e n t o s _ k a r d e x   (   i d   S E R I A L   P R I M A R Y   K E Y ,   a r t i c u l o _ i d   B I G I N T   N O T   N U L L   R E F E R E N C E S   a c t i v o ( i d )   O N   D E L E T E   C A S C A D E ,   l o t e _ i d   I N T   R E F E R E N C E S   l o t e s _ c a r g a ( i d )   O N   D E L E T E   S E T   N U L L ,   f e c h a _ m o v i m i e n t o   D A T E   N O T   N U L L ,   d e t a l l e   T E X T   N O T   N U L L ,   r e f e r e n c i a   V A R C H A R ( 1 0 0 ) ,   a r e a   V A R C H A R ( 1 0 0 ) ,   i n g r e s o s   I N T   D E F A U L T   N U L L ,   s a l i d a s   I N T   D E F A U L T   N U L L ,   s a l d o _ r e g i s t r a d o   I N T   N O T   N U L L ,   r u t a _ i m a g e n _ r e s p a l d o   V A R C H A R ( 5 1 2 ) ,   n u m e r o _ p a g i n a   I N T ,   o r d e n _ f i l a   I N T ,   t i e n e _ e r r o r _ s a l d o   B O O L E A N   N O T   N U L L   D E F A U L T   F A L S E ,   s a l d o _ c a l c u l a d o   I N T   N U L L ,   o b s e r v a c i o n e s   T E X T   N U L L   ) ;  
+ 

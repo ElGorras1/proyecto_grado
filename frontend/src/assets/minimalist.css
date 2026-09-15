@@ -1,0 +1,222 @@
+:root {
+  --bg-color: #ffffff;
+  --bg-subtle: #f3efe9;
+  --bg-body: #f9f8f4;
+  --text-primary: #332d29;
+  --text-secondary: #70675f;
+  --text-muted: #a69c91;
+  --border-color: #e8e4db;
+  --border-subtle: #f0ece5;
+  --primary: #857565;
+  --primary-hover: #6b5d4f;
+  --radius: 10px;
+  --shadow-sm: 0 2px 8px rgba(133, 117, 101, 0.04);
+  --shadow: 0 8px 24px rgba(133, 117, 101, 0.08);
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-body);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Minimalist Headings */
+h1, h2, h3 {
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+/* Minimalist Containers */
+.login-card, .dashboard, .usuarios-view, .reporte-accesos, .admin-view {
+  background: var(--bg-color) !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: var(--shadow-sm) !important;
+  border-radius: var(--radius) !important;
+  margin: 2.5rem auto !important;
+  max-width: 1200px;
+  padding: 2.5rem !important;
+}
+.login-container { background: var(--bg-body) !important; }
+.login-card { max-width: 380px !important; }
+
+/* Navigation / Back Button */
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 1rem;
+}
+.header-nav h1 {
+  margin: 0;
+}
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary) !important;
+  font-size: 0.9rem !important;
+  font-weight: 500 !important;
+  text-decoration: none !important;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: transparent;
+  transition: all 0.2s ease !important;
+  border: 1px solid transparent !important;
+  margin-right: 1rem;
+}
+.btn-back:hover {
+  color: var(--primary) !important;
+  background: var(--bg-subtle) !important;
+  border-color: var(--border-color) !important;
+}
+.btn-back i {
+  font-size: 0.8rem;
+}
+
+/* Minimalist Tables */
+table {
+  width: 100%;
+  border-collapse: collapse !important;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius) !important;
+  overflow: hidden !important;
+}
+th {
+  background: var(--bg-color) !important;
+  color: var(--text-secondary) !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  padding: 1rem 1.25rem !important;
+  text-align: left !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+td {
+  padding: 1rem 1.25rem !important;
+  font-size: 0.9rem !important;
+  color: var(--text-primary) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+tr:last-child td { border-bottom: none !important; }
+tr:hover td { background-color: var(--bg-subtle) !important; }
+
+/* Minimalist Forms */
+input, select, textarea {
+  width: 100%;
+  padding: 0.6rem 0.85rem !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 8px !important;
+  background: var(--bg-color) !important;
+  font-family: inherit !important;
+  font-size: 0.9rem !important;
+  color: var(--text-primary) !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+  box-sizing: border-box !important;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(133, 117, 101, 0.15) !important;
+}
+label {
+  display: block;
+  font-size: 0.8rem !important;
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+  margin-bottom: 0.4rem !important;
+}
+
+/* Minimalist Buttons */
+button, .btn, .nav-item {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0.6rem 1.25rem !important;
+  font-size: 0.9rem !important;
+  font-weight: 500 !important;
+  border-radius: 8px !important;
+  border: 1px solid transparent !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  text-decoration: none !important;
+}
+.btn-primary, button[type="submit"] {
+  background-color: var(--primary) !important;
+  color: #ffffff !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+.btn-primary:hover, button[type="submit"]:hover {
+  background-color: var(--primary-hover) !important;
+}
+.btn-outline, .nav-item {
+  background-color: var(--bg-color) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+.btn-outline:hover, .nav-item:hover {
+  background-color: var(--bg-subtle) !important;
+}
+.btn-danger {
+  background-color: #fff !important;
+  border-color: #f5e4e4 !important;
+  color: #a84b4b !important;
+}
+.btn-danger:hover {
+  background-color: #fdf5f5 !important;
+}
+.btn-success {
+  background-color: #fff !important;
+  border-color: #e2f0e9 !important;
+  color: #4b7a60 !important;
+}
+.btn-success:hover {
+  background-color: #f2f9f5 !important;
+}
+button:disabled, .btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+/* Minimalist Badges */
+.badge, .resultado-exito, .resultado-rechazo {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 0.2rem 0.6rem !important;
+  font-size: 0.75rem !important;
+  font-weight: 500 !important;
+  border-radius: 9999px !important;
+  border: none !important;
+}
+.badge-rol { background-color: var(--bg-subtle) !important; color: var(--text-secondary) !important; }
+.badge-activo, .resultado-exito { background-color: #eaf3ed !important; color: #38664b !important; }
+.badge-baja, .resultado-rechazo { background-color: #fdf2f2 !important; color: #a13f3f !important; }
+
+/* Minimalist Modals */
+.modal-backdrop {
+  background: rgba(51, 45, 41, 0.4) !important;
+  backdrop-filter: blur(3px) !important;
+}
+.modal {
+  background: var(--bg-color) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow) !important;
+  border: 1px solid var(--border-color) !important;
+  padding: 2.5rem !important;
+}
+.filtros {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  padding-bottom: 1.5rem !important;
+  margin-bottom: 2rem !important;
+  border-radius: 0 !important;
+}

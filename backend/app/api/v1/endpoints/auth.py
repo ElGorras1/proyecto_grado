@@ -21,17 +21,57 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
     usuario = get_usuario_by_email(db, payload.email)
     ip = request.client.host if request.client else None
 
-    if usuario is None or not verify_password(payload.password, usuario.password_hash):
-        # Login fallido: registrar rechazo en auditoría.
+    if usuario is None:
+        # Login fallido: usuario desconocido
         registrar_evento_auditoria(
             db,
-            usuario_id=usuario.id if usuario else None,
+            usuario_id=None,
             accion="login",
             recurso="usuario",
-            recurso_id=usuario.id if usuario else None,
+            recurso_id=None,
             resultado="rechazo",
             ip_origen=ip,
-            detalle={"email_intentado": payload.email},
+            detalle={"email_intentado": payload.email, "razon": "Usuario inexistente"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas",
+        )
+
+    if usuario.estado != "activo":
+        # Login fallido: cuenta desactivada
+        etiqueta = f"{usuario.rol.nombre}/{usuario.estado.capitalize()}" if usuario.rol else f"/{usuario.estado.capitalize()}"
+        registrar_evento_auditoria(
+            db,
+            usuario_id=usuario.id,
+            accion="login",
+            recurso="usuario",
+            recurso_id=usuario.id,
+            resultado="rechazo",
+            ip_origen=ip,
+            detalle={
+                "email_intentado": payload.email,
+                "razon": "Cuenta desactivada",
+                "usuario_nombre": usuario.nombre,
+                "usuario_etiqueta": etiqueta
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cuenta desactivada",
+        )
+
+    if not verify_password(payload.password, usuario.password_hash):
+        # Login fallido: contraseña incorrecta
+        registrar_evento_auditoria(
+            db,
+            usuario_id=usuario.id,
+            accion="login",
+            recurso="usuario",
+            recurso_id=usuario.id,
+            resultado="rechazo",
+            ip_origen=ip,
+            detalle={"email_intentado": payload.email, "razon": "Contraseña incorrecta"},
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

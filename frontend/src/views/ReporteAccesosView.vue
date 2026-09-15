@@ -53,7 +53,10 @@ onMounted(cargarAccesos)
 
 <template>
   <div class="reporte-accesos">
-    <h1>Reporte de accesos</h1>
+    <div class="header-nav">
+      <router-link to="/" class="btn-back"><i class="pi pi-arrow-left"></i> Volver</router-link>
+      <h1>Reporte de Accesos</h1>
+    </div>
 
     <div class="filtros">
       <label>
@@ -91,7 +94,17 @@ onMounted(cargarAccesos)
       <tbody>
         <tr v-for="a in accesos" :key="a.id">
           <td>{{ formatearFecha(a.fecha_hora) }}</td>
-          <td>{{ a.usuario_id ?? 'Desconocido' }}</td>
+          <td>
+            <template v-if="a.detalle && a.detalle.usuario_nombre">
+              {{ a.detalle.usuario_nombre }} ({{ a.detalle.usuario_etiqueta }})
+            </template>
+            <template v-else-if="a.usuario_id">
+              Usuario #{{ a.usuario_id }}
+            </template>
+            <template v-else>
+              Desconocido
+            </template>
+          </td>
           <td>
             <span :class="a.resultado === 'exito' ? 'resultado-exito' : 'resultado-rechazo'">
               {{ a.resultado }}
@@ -103,8 +116,6 @@ onMounted(cargarAccesos)
     </table>
 
     <p v-else-if="!cargando">No hay registros de acceso.</p>
-
-    <router-link to="/">Volver al panel principal</router-link>
   </div>
 </template>
 
