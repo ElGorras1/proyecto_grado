@@ -39,3 +39,15 @@ class MovimientoKardex(Base):
     observaciones: Mapped[str | None] = mapped_column(Text)
     nodo_grafo: Mapped[str | None] = mapped_column(String(100))
     requiere_auditoria_nodo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Campos de transacciones modernas (enriquecidas)
+    usuario_operador: Mapped[str | None] = mapped_column(String(150))
+    tipo_operacion: Mapped[str | None] = mapped_column(String(50))
+    receptor: Mapped[str | None] = mapped_column(String(200))
+    feria_id: Mapped[int | None] = mapped_column(Integer)
+    ciudad_feria: Mapped[str | None] = mapped_column(String(100))
+    canal_venta: Mapped[str | None] = mapped_column(String(100))
+    motivo_baja: Mapped[str | None] = mapped_column(String(200))
+    referencia_documento: Mapped[str | None] = mapped_column(String(200))
+    
+    estado: Mapped[str] = mapped_column(String(20), default='ACTIVO', server_default='ACTIVO', nullable=False)

@@ -65,7 +65,8 @@ def calcular_y_validar_saldos(
                 ref=fila.referencia,
                 area=fila.area,
                 ingreso=fila.ingresos,
-                salida=fila.salidas
+                salida=fila.salidas,
+                db=db
             )
             
             mov = MovimientoKardexCreate(

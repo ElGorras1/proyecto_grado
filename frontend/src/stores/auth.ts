@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import axios from 'axios'
+import api from '@/services/api'
 
 export interface UsuarioActual {
   id: number
@@ -29,7 +29,7 @@ export const useAuthStore = defineStore('auth', {
 
   actions: {
     async login(email: string, password: string) {
-      const { data } = await axios.post(`${API_BASE}/auth/login`, { email, password })
+      const { data } = await api.post('/auth/login', { email, password })
       this.token = data.access_token
       sessionStorage.setItem('access_token', data.access_token)
       await this.fetchUsuarioActual()
@@ -37,9 +37,7 @@ export const useAuthStore = defineStore('auth', {
 
     async fetchUsuarioActual() {
       if (!this.token) return
-      const { data } = await axios.get(`${API_BASE}/auth/me`, {
-        headers: { Authorization: `Bearer ${this.token}` },
-      })
+      const { data } = await api.get('/auth/me')
       this.usuario = data
     },
 

@@ -37,6 +37,16 @@ class MovimientoKardexCreate(BaseModel):
     observaciones: Optional[str] = None
     nodo_grafo: Optional[str] = None
     requiere_auditoria_nodo: bool = False
+    # Transacciones modernas
+    usuario_operador: Optional[str] = None
+    tipo_operacion: Optional[str] = None
+    receptor: Optional[str] = None
+    feria_id: Optional[int] = None
+    ciudad_feria: Optional[str] = None
+    canal_venta: Optional[str] = None
+    motivo_baja: Optional[str] = None
+    referencia_documento: Optional[str] = None
+    estado: str = "ACTIVO"
 
 class MovimientoKardexOut(MovimientoKardexCreate):
     id: int

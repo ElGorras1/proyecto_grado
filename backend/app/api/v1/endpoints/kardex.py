@@ -55,9 +55,10 @@ async def upload_lote(
             
         imagenes_paths.append(ruta_completa)
         
-    # 2. Llamada a Gemini 3.6 Flash
+    # 2. Llamada a Gemini 3.6 Flash (en thread para no bloquear el Event Loop)
+    from starlette.concurrency import run_in_threadpool
     try:
-        paginas_extraidas = procesar_lote_imagenes(imagenes_paths)
+        paginas_extraidas = await run_in_threadpool(procesar_lote_imagenes, imagenes_paths)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en Gemini LLM: {str(e)}")
         
@@ -138,7 +139,7 @@ def get_errores_human_in_the_loop(articulo_id: Optional[int] = None, db: Session
 def get_articulos_typeahead(db: Session = Depends(get_db)):
     from sqlalchemy import func, case
     
-    # Contar alertas rojas y amarillas por artículo
+    # Contar alertas rojas y amarillas por artículo (solo legacy)
     sum_rojas = func.sum(case((MovimientoKardex.tiene_error_saldo == True, 1), else_=0)).label('rojas')
     sum_amarillas = func.sum(case((MovimientoKardex.requiere_auditoria_nodo == True, 1), else_=0)).label('amarillas')
     
@@ -146,14 +147,24 @@ def get_articulos_typeahead(db: Session = Depends(get_db)):
         .outerjoin(MovimientoKardex, Activo.id == MovimientoKardex.articulo_id)\
         .group_by(Activo.id)\
         .all()
-        
-    return [{
-        "id": a.id, 
-        "nombre": a.nombre, 
-        "codigo": a.codigo,
-        "alertas_rojas": a.rojas or 0,
-        "alertas_amarillas": a.amarillas or 0
-    } for a in resultados]
+    
+    # Calcular stock actual por artículo (último saldo_registrado)
+    lista = []
+    for a in resultados:
+        ultimo = db.query(MovimientoKardex.saldo_registrado)\
+            .filter(MovimientoKardex.articulo_id == a.id)\
+            .order_by(MovimientoKardex.id.desc())\
+            .first()
+        stock = ultimo[0] if ultimo else 0
+        lista.append({
+            "id": a.id, 
+            "nombre": a.nombre, 
+            "codigo": a.codigo,
+            "alertas_rojas": a.rojas or 0,
+            "alertas_amarillas": a.amarillas or 0,
+            "stock_actual": stock
+        })
+    return lista
 
 @router.get("/grafo/{articulo_id}")
 def get_grafo_articulo(articulo_id: int, db: Session = Depends(get_db)):
@@ -193,44 +204,87 @@ def get_grafo_articulo(articulo_id: int, db: Session = Depends(get_db)):
 @router.get("/nodos")
 def get_nodos_disponibles(db: Session = Depends(get_db)):
     """
-    Retorna la lista de todos los nodos/áreas distintos usados en la historia 
-    para poblar el dropdown de nuevos movimientos.
+    Retorna las áreas y operaciones activas del catálogo maestro 
+    para poblar el dropdown de nuevas transacciones.
     """
-    nodos_historicos = db.query(MovimientoKardex.nodo_grafo)\
-        .filter(MovimientoKardex.nodo_grafo.isnot(None))\
-        .distinct().all()
-    lista = [n[0] for n in nodos_historicos]
-    # Nodos base por si la base está vacía
-    base = ["Salida: Ventas", "Salida: Obsequios", "Salida: Baja/Pérdida", "Feria", "Donación"]
-    for b in base:
-        if b not in lista:
-            lista.append(b)
-    return sorted(lista)
+    from sqlalchemy import text
+    result = db.execute(text(
+        "SELECT nombre_oficial, tipo FROM catalogo_areas WHERE activa = TRUE ORDER BY tipo, nombre_oficial"
+    ))
+    nodos = []
+    for nombre, tipo in result:
+        if tipo == 'departamento':
+            nodos.append({"valor": f"Área: {nombre}", "etiqueta": f"📍 {nombre}", "grupo": "Departamentos"})
+        else:
+            nodos.append({"valor": nombre, "etiqueta": f"📦 {nombre}", "grupo": "Tipo de Operación"})
+    return nodos
+
+@router.get("/ferias")
+def get_ferias(db: Session = Depends(get_db)):
+    """Retorna las ferias activas del catálogo."""
+    from sqlalchemy import text
+    result = db.execute(text("SELECT id, nombre, ciudad FROM catalogo_ferias WHERE activa = TRUE ORDER BY nombre"))
+    return [{"id": r[0], "nombre": r[1], "ciudad": r[2]} for r in result]
+
+@router.get("/catalogo-areas")
+def get_catalogo_areas(db: Session = Depends(get_db)):
+    """Retorna todas las áreas del catálogo (activas e inactivas) para administración."""
+    from sqlalchemy import text
+    result = db.execute(text(
+        "SELECT id, nombre_oficial, abreviatura, descripcion, tipo, activa FROM catalogo_areas ORDER BY activa DESC, nombre_oficial"
+    ))
+    return [{"id": r[0], "nombre": r[1], "abreviatura": r[2], "descripcion": r[3], "tipo": r[4], "activa": r[5]} for r in result]
 
 from pydantic import BaseModel
 from datetime import date
+from typing import Optional
+from app.api.deps import get_current_user
+from app.models.usuario import Usuario
+
 class MovimientoActualCrear(BaseModel):
     articulo_id: int
     tipo: str  # "ingreso" o "salida"
     cantidad: int
     nodo_grafo: str
     observaciones: str = ""
+    # Campos enriquecidos
+    tipo_operacion: Optional[str] = None
+    receptor: Optional[str] = None
+    feria_id: Optional[int] = None
+    ciudad_feria: Optional[str] = None
+    canal_venta: Optional[str] = None
+    motivo_baja: Optional[str] = None
+    referencia_documento: Optional[str] = None
 
 @router.post("/movimiento-actual")
-def registrar_movimiento_actual(payload: MovimientoActualCrear, db: Session = Depends(get_db)):
+def registrar_movimiento_actual(
+    payload: MovimientoActualCrear, 
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
     """
     Registra un movimiento operativo en el presente, sumando/restando al último saldo.
+    Valida que haya stock suficiente para salidas. Guarda detalles enriquecidos.
     """
-    # 1. Obtener el último saldo
+    # 1. Obtener el último saldo (considerando legacy + modernos) con BLOQUEO DE FILA para evitar Race Conditions
     ultimo_mov = db.query(MovimientoKardex)\
         .filter(MovimientoKardex.articulo_id == payload.articulo_id)\
-        .order_by(MovimientoKardex.fecha_movimiento.desc(), MovimientoKardex.numero_pagina.desc(), MovimientoKardex.orden_fila.desc())\
+        .order_by(MovimientoKardex.id.desc())\
+        .with_for_update()\
         .first()
         
     saldo_anterior = ultimo_mov.saldo_registrado if ultimo_mov else 0
     ing = payload.cantidad if payload.tipo == "ingreso" else 0
     sal = payload.cantidad if payload.tipo == "salida" else 0
     nuevo_saldo = saldo_anterior + ing - sal
+    
+    # 2. Validar stock suficiente
+    if nuevo_saldo < 0:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Stock insuficiente. Saldo actual: {saldo_anterior} unidades. "
+                   f"No se pueden retirar {sal} unidades."
+        )
     
     nuevo_mov = MovimientoKardex(
         articulo_id=payload.articulo_id,
@@ -243,7 +297,16 @@ def registrar_movimiento_actual(payload: MovimientoActualCrear, db: Session = De
         tiene_error_saldo=False,
         requiere_auditoria_nodo=False,
         nodo_grafo=payload.nodo_grafo,
-        observaciones="Registro digital"
+        observaciones="Registro digital",
+        # Campos enriquecidos
+        usuario_operador=current_user.nombre,
+        tipo_operacion=payload.tipo_operacion,
+        receptor=payload.receptor,
+        feria_id=payload.feria_id,
+        ciudad_feria=payload.ciudad_feria,
+        canal_venta=payload.canal_venta,
+        motivo_baja=payload.motivo_baja,
+        referencia_documento=payload.referencia_documento
     )
     db.add(nuevo_mov)
     db.commit()
@@ -252,11 +315,77 @@ def registrar_movimiento_actual(payload: MovimientoActualCrear, db: Session = De
 
 @router.get("/historial/{articulo_id}", response_model=List[MovimientoKardexOut])
 def get_historial_kardex(articulo_id: int, db: Session = Depends(get_db)):
+    """Solo retorna movimientos legacy (escaneados del papel, con lote_id)."""
     movimientos = db.query(MovimientoKardex)\
-        .filter(MovimientoKardex.articulo_id == articulo_id)\
+        .filter(
+            MovimientoKardex.articulo_id == articulo_id,
+            MovimientoKardex.lote_id.isnot(None)
+        )\
         .order_by(MovimientoKardex.fecha_movimiento.asc(), MovimientoKardex.numero_pagina.asc(), MovimientoKardex.orden_fila.asc())\
         .all()
     return movimientos
+
+@router.get("/historial-actual/{articulo_id}", response_model=List[MovimientoKardexOut])
+def get_historial_actual(articulo_id: int, db: Session = Depends(get_db)):
+    """Solo retorna movimientos modernos (digitales, sin lote_id)."""
+    movimientos = db.query(MovimientoKardex)\
+        .filter(
+            MovimientoKardex.articulo_id == articulo_id,
+            MovimientoKardex.lote_id.is_(None)
+        )\
+        .order_by(MovimientoKardex.id.asc())\
+        .all()
+    return movimientos
+
+@router.post("/movimiento-actual/{movimiento_id}/anular", response_model=MovimientoKardexOut)
+def anular_movimiento_actual(
+    movimiento_id: int, 
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """Anula un movimiento moderno y recalcula los saldos de los movimientos posteriores del mismo artículo."""
+    mov = db.query(MovimientoKardex).filter(MovimientoKardex.id == movimiento_id).first()
+    if not mov:
+        raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+        
+    if mov.lote_id is not None:
+        raise HTTPException(status_code=400, detail="No se pueden anular registros legacy por este medio")
+        
+    if mov.estado == 'ANULADO':
+        raise HTTPException(status_code=400, detail="El movimiento ya está anulado")
+        
+    mov.estado = 'ANULADO'
+    
+    # Recalcular saldos posteriores (modernos)
+    posteriores = db.query(MovimientoKardex)\
+        .filter(MovimientoKardex.articulo_id == mov.articulo_id, MovimientoKardex.id > mov.id, MovimientoKardex.lote_id.is_(None))\
+        .order_by(MovimientoKardex.id.asc())\
+        .all()
+        
+    # Obtener el saldo del movimiento anterior para base de cálculo
+    anterior = db.query(MovimientoKardex)\
+        .filter(MovimientoKardex.articulo_id == mov.articulo_id, MovimientoKardex.id < mov.id)\
+        .order_by(MovimientoKardex.id.desc())\
+        .first()
+        
+    saldo_actual = anterior.saldo_registrado if anterior else 0
+    
+    # El movimiento anulado queda con saldo = saldo_anterior
+    mov.saldo_registrado = saldo_actual
+    
+    for m in posteriores:
+        if m.estado == 'ANULADO':
+            m.saldo_registrado = saldo_actual
+            continue
+            
+        ing = m.ingresos or 0
+        sal = m.salidas or 0
+        saldo_actual = saldo_actual + ing - sal
+        m.saldo_registrado = saldo_actual
+
+    db.commit()
+    db.refresh(mov)
+    return mov
 
 @router.put("/movimiento/{movimiento_id}", response_model=MovimientoKardexOut)
 def update_movimiento_kardex(movimiento_id: int, payload: MovimientoKardexEdit, db: Session = Depends(get_db)):
