@@ -16,3 +16,9 @@ alembic==1.13.2
 
 # === Rate limiting ===
 slowapi==0.1.9
+
+# === IA y Procesamiento Kardex ===
+google-genai>=0.1.1
+Pillow>=10.0.0
+thefuzz>=0.22.1
+rapidfuzz>=3.0.0

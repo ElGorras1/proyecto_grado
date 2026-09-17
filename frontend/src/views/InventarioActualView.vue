@@ -27,6 +27,7 @@ interface Movimiento {
   canal_venta: string | null
   motivo_baja: string | null
   referencia_documento: string | null
+  estado?: string | null
 }
 
 interface NodoCatalogo {
