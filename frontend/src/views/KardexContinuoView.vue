@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, nextTick } from 'vue'
-import { use } from 'echarts/core'
-import { SankeyChart } from 'echarts/charts'
-import { TooltipComponent, TitleComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-import VChart from 'vue-echarts'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import GrafoFlujoArticulo from '@/components/GrafoFlujoArticulo.vue'
+import RevisionHil from '@/components/RevisionHil.vue'
+import BuscadorArticulos from '@/components/BuscadorArticulos.vue'
+import { useRoute } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 
-use([SankeyChart, TooltipComponent, TitleComponent, CanvasRenderer])
 
 // Tipos
 interface Articulo {
@@ -20,6 +19,7 @@ interface Articulo {
 
 interface Movimiento {
   id: number
+  lote_id: number | null
   fecha_movimiento: string
   detalle: string
   referencia: string | null
@@ -35,6 +35,20 @@ interface Movimiento {
   observaciones: string | null
   nodo_grafo: string | null
   requiere_auditoria_nodo: boolean
+  area_estado: string
+  referencia_estado: string
+  requiere_auditoria_referencia: boolean
+  fecha_original: string | null
+  datos_originales: Record<string, unknown> | null
+  tiene_error_fecha: boolean
+  fecha_estado: string
+  tipos_alerta: string[]
+}
+
+interface ArchivoKardex {
+  id: string
+  archivo: File
+  previewUrl: string
 }
 
 // Estados Globales
@@ -52,22 +66,48 @@ const subPestaña = ref<'historial' | 'hil' | 'grafo'>('historial')
 const movimientos = ref<Movimiento[]>([])
 const erroresHIL = ref<Movimiento[]>([])
 const cargandoHistorial = ref(false)
+const loteSeleccionado = ref<number | null>(null)
+const lotesVisibles = computed(() =>
+  [...new Set(movimientos.value.map(m => m.lote_id).filter((id): id is number => id !== null))]
+    .sort((a, b) => a - b)
+)
+const movimientosMostrados = computed(() => loteSeleccionado.value === null
+  ? movimientos.value
+  : movimientos.value.filter(m => m.lote_id === loteSeleccionado.value)
+)
+
+function numeroEscaneo(loteId: number | null): number {
+  return loteId === null ? 0 : lotesVisibles.value.indexOf(loteId) + 1
+}
 
 // Subida de Lote
-const archivos = ref<File[]>([])
+const archivos = ref<ArchivoKardex[]>([])
+const ordenConfirmado = ref(false)
+const lotePendiente = ref<{
+  pendiente_id: string
+  articulo_nombre: string
+  diferencias: { pagina: number; titulo_detectado: string }[]
+} | null>(null)
 const subiendo = ref(false)
+const segundosProcesando = ref(0)
+let relojCarga: ReturnType<typeof setInterval> | undefined
 
 // Crear Artículo
 const nuevoArticuloNombre = ref('')
 const creandoArticulo = ref(false)
 
 // Auditoría y Edición (HIL)
-const filaEditando = ref<number | null>(null)
-const editForm = ref({ ingresos: 0 as number | null, salidas: 0 as number | null, saldo_registrado: 0, nodo_grafo: '' as string | null })
+const movimientoRevisando = ref<Movimiento | null>(null)
+const tipoHIL = ref('')
+const erroresFiltrados = computed(() => erroresHIL.value.filter(m => !tipoHIL.value || m.tipos_alerta.includes(tipoHIL.value)))
+const auth = useAuthStore()
+const route = useRoute()
+const puedeCorregir = computed(() => auth.rol === 'Administrador' || auth.rol === 'Operador')
+const limitesCarga = ref({ paginas: 20, mb_imagen: 20, mb_lote: 100 })
 const imagenAuditoria = ref<string | null>(null)
+const urlImagenAuditoria = computed(() => imagenAuditoria.value
+  ? new URL(imagenAuditoria.value, new URL(api.defaults.baseURL ?? '/api/v1', window.location.origin).origin).href : '')
 
-// ECharts Sankey Option
-const sankeyOption = ref<any>(null)
 
 // Computed
 const articulosFiltrados = computed(() => {
@@ -78,6 +118,16 @@ const articulosFiltrados = computed(() => {
 
 onMounted(async () => {
   await cargarArticulos()
+  const destino = articulos.value.find(a => a.id === Number(route.query.articulo_id))
+  if (destino) {
+    seleccionarArticulo(destino, route.query.tab === 'hil' ? 'hil' : 'historial')
+  }
+  try { limitesCarga.value = (await api.get('/kardex/limites-carga')).data } catch { /* el servidor siempre verifica los límites */ }
+})
+
+onBeforeUnmount(() => {
+  liberarPrevisualizaciones()
+  if (relojCarga) clearInterval(relojCarga)
 })
 
 async function cargarArticulos() {
@@ -89,11 +139,13 @@ async function cargarArticulos() {
   }
 }
 
-function seleccionarArticulo(art: Articulo) {
+function seleccionarArticulo(art: Articulo, tab: 'historial' | 'hil' = 'historial') {
   articuloSeleccionado.value = art
+  loteSeleccionado.value = null
   vistaActual.value = 'historial'
-  subPestaña.value = 'historial'
-  cargarHistorial()
+  subPestaña.value = tab
+  if (tab === 'hil') cargarErroresHIL()
+  else cargarHistorial()
 }
 
 function irACrearArticulo() {
@@ -112,7 +164,7 @@ function irABuscar() {
 }
 
 function irASubirLote() {
-  archivos.value = []
+  limpiarArchivos()
   vistaActual.value = 'subir_lote'
   mensajeExito.value = ''
   errorMsg.value = ''
@@ -144,6 +196,9 @@ async function cargarHistorial() {
   try {
     const res = await api.get(`/kardex/historial/${articuloSeleccionado.value.id}`)
     movimientos.value = res.data
+    if (loteSeleccionado.value !== null && !lotesVisibles.value.includes(loteSeleccionado.value)) {
+      loteSeleccionado.value = null
+    }
   } catch (err: any) {
     errorMsg.value = "Error al cargar el historial del kárdex."
   } finally {
@@ -164,118 +219,145 @@ async function cargarErroresHIL() {
   }
 }
 
-async function cargarGrafoVisual() {
-  if (!articuloSeleccionado.value) return
-  try {
-    const res = await api.get(`/kardex/grafo/${articuloSeleccionado.value.id}`)
-    
-    // Configuración para el Diagrama Sankey
-    sankeyOption.value = {
-      title: {
-        text: `Flujo Físico: ${articuloSeleccionado.value.nombre}`,
-        left: 'center',
-        top: 10,
-        textStyle: { color: '#332d29', fontWeight: '500' }
-      },
-      tooltip: {
-        trigger: 'item',
-        triggerOn: 'mousemove',
-        formatter: '{b}: {c} unidades'
-      },
-      series: [
-        {
-          type: 'sankey',
-          layout: 'none',
-          emphasis: { focus: 'adjacency' },
-          data: res.data.nodes,
-          links: res.data.links,
-          lineStyle: {
-            color: 'source',
-            curveness: 0.5,
-            opacity: 0.4
-          },
-          itemStyle: {
-            borderWidth: 1,
-            borderColor: '#333'
-          },
-          label: {
-            color: '#333',
-            fontSize: 13,
-            fontWeight: 'bold'
-          }
-        }
-      ]
-    }
-  } catch (err) {
-    errorMsg.value = "Error al dibujar el grafo visual."
-  }
-}
-
 function cambiarPestaña(tab: 'historial' | 'hil' | 'grafo') {
   subPestaña.value = tab
   if (tab === 'historial') cargarHistorial()
   if (tab === 'hil') cargarErroresHIL()
-  if (tab === 'grafo') cargarGrafoVisual()
 }
 
 // Logica subida de lote
+function liberarPrevisualizaciones() {
+  archivos.value.forEach(item => URL.revokeObjectURL(item.previewUrl))
+}
+
+function limpiarArchivos() {
+  liberarPrevisualizaciones()
+  archivos.value = []
+  ordenConfirmado.value = false
+}
+
 function handleFileChange(event: Event) {
   const target = event.target as HTMLInputElement
-  if (target.files) archivos.value = Array.from(target.files)
+  limpiarArchivos()
+  if (target.files) {
+    const seleccion = Array.from(target.files)
+    const limite = limitesCarga.value
+    const formatos = ['image/jpeg', 'image/png', 'image/webp']
+    if (seleccion.length > limite.paginas || seleccion.some(f => f.size > limite.mb_imagen * 1024 * 1024)
+      || seleccion.reduce((s, f) => s + f.size, 0) > limite.mb_lote * 1024 * 1024) {
+      errorMsg.value = `Límite: ${limite.paginas} páginas, ${limite.mb_imagen} MB por imagen y ${limite.mb_lote} MB por lote.`
+      target.value = ''; return
+    }
+    if (seleccion.some(f => !formatos.includes(f.type))) {
+      errorMsg.value = 'Utiliza fotografías JPEG, PNG o WebP.'; target.value = ''; return
+    }
+    errorMsg.value = ''
+    archivos.value = seleccion.map((archivo, index) => ({
+      id: `${archivo.name}-${archivo.lastModified}-${index}`,
+      archivo,
+      previewUrl: URL.createObjectURL(archivo)
+    }))
+  }
+  target.value = ''
+}
+
+function moverArchivo(indice: number, desplazamiento: number) {
+  const nuevoIndice = indice + desplazamiento
+  if (nuevoIndice < 0 || nuevoIndice >= archivos.value.length) return
+  const [elemento] = archivos.value.splice(indice, 1)
+  archivos.value.splice(nuevoIndice, 0, elemento)
+  ordenConfirmado.value = false
+}
+
+function eliminarArchivo(indice: number) {
+  const [elemento] = archivos.value.splice(indice, 1)
+  if (elemento) URL.revokeObjectURL(elemento.previewUrl)
+  ordenConfirmado.value = false
 }
 
 async function subirLote() {
+  if (subiendo.value || lotePendiente.value) return
   if (!articuloSeleccionado.value) return
   if (archivos.value.length === 0) return errorMsg.value = "Selecciona al menos una imagen."
+  if (!ordenConfirmado.value) return errorMsg.value = "Confirma el orden físico de las páginas antes de procesarlas."
   
   subiendo.value = true
+  segundosProcesando.value = 0
+  relojCarga = setInterval(() => { segundosProcesando.value += 1 }, 1000)
   errorMsg.value = ''; mensajeExito.value = ''
   
   const formData = new FormData()
   formData.append('articulo_id', articuloSeleccionado.value.id.toString())
-  archivos.value.forEach(file => formData.append('archivos', file))
+  archivos.value.forEach(item => formData.append('archivos', item.archivo, item.archivo.name))
 
   try {
-    await api.post('/kardex/upload-lote', formData, { timeout: 120000 })
-    mensajeExito.value = "Lote escaneado exitosamente."
-    archivos.value = []
+    // El proceso secuencial puede superar dos minutos con varias páginas y reintentos.
+    const respuesta = await api.post('/kardex/upload-lote', formData, { timeout: 0 })
+    if (respuesta.data.requiere_confirmacion) {
+      lotePendiente.value = respuesta.data
+      return
+    }
+    mensajeExito.value = respuesta.data.duplicado
+      ? "Estas páginas ya estaban guardadas. Abajo se muestran sus movimientos; no se agregó ningún duplicado."
+      : "Lote escaneado exitosamente."
+    loteSeleccionado.value = respuesta.data.lote_id ?? null
+    limpiarArchivos()
+    vistaActual.value = 'historial'
     cambiarPestaña('historial')
   } catch (err: any) {
-    errorMsg.value = err.response?.data?.detail || "Error subiendo el lote a procesar."
+    const detalle = err.response?.data?.detail
+    if (typeof detalle === 'string') {
+      errorMsg.value = detalle
+    } else if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+      errorMsg.value = 'Se agotó la espera de la conexión. El servidor podría seguir procesando el lote; revisa el historial antes de repetir la carga.'
+    } else if (!err.response) {
+      errorMsg.value = 'Se perdió la conexión con el servidor. No se pudo confirmar si el lote terminó. Revisa la conexión y el historial antes de volver a subirlo.'
+    } else {
+      errorMsg.value = `El servidor rechazó el lote (HTTP ${err.response.status}). Revisa el registro del backend para conocer la causa.`
+    }
   } finally {
+    if (relojCarga) clearInterval(relojCarga)
+    relojCarga = undefined
     subiendo.value = false
   }
 }
 
 // Logica HIL
+async function decidirLote(confirmar: boolean) {
+  if (!lotePendiente.value || subiendo.value) return
+  subiendo.value = true
+  errorMsg.value = ''
+  try {
+    await api.post(`/kardex/lotes-pendientes/${lotePendiente.value.pendiente_id}/decision`, { confirmar })
+    lotePendiente.value = null
+    if (confirmar) {
+      limpiarArchivos()
+      vistaActual.value = 'historial'
+      cambiarPestaña('historial')
+      mensajeExito.value = 'Lote guardado con tu autorización de las diferencias de título.'
+    } else {
+      ordenConfirmado.value = false
+      mensajeExito.value = 'Lote cancelado. Revisa las fotografías antes de volver a procesar.'
+    }
+  } catch (err: any) {
+    errorMsg.value = err.response?.data?.detail || 'No se pudo registrar la decisión. Puedes reintentar sin escanear otra vez.'
+  } finally {
+    subiendo.value = false
+  }
+}
+
 function iniciarEdicionHIL(mov: Movimiento) {
-  filaEditando.value = mov.id
-  editForm.value = {
-    ingresos: mov.ingresos,
-    salidas: mov.salidas,
-    saldo_registrado: mov.saldo_registrado,
-    nodo_grafo: mov.nodo_grafo
-  }
-  if (mov.ruta_imagen_respaldo) {
-    imagenAuditoria.value = '/' + mov.ruta_imagen_respaldo.replace(/\\/g, '/')
-  }
+  movimientoRevisando.value = mov
 }
 
 function cerrarEdicionHIL() {
-  filaEditando.value = null
-  imagenAuditoria.value = null
+  movimientoRevisando.value = null
 }
 
-async function guardarEdicionHIL(mov: Movimiento) {
-  try {
-    await api.put(`/kardex/movimiento/${mov.id}`, editForm.value)
-    mensajeExito.value = "Corrección aplicada. Saldos y nodos recalculados."
-    cerrarEdicionHIL()
-    await cargarErroresHIL() // refresh HIL list
-    setTimeout(() => { mensajeExito.value = '' }, 3000)
-  } catch(err: any) {
-    errorMsg.value = "Error al corregir el registro."
-  }
+async function guardarEdicionHIL() {
+  cerrarEdicionHIL()
+  mensajeExito.value = 'Revisión guardada con su motivo y autoría. Las alertas de fecha y saldo se evaluaron por separado.'
+  await Promise.all([cargarErroresHIL(), cargarArticulos()])
 }
 
 function verFoto(ruta: string | null) {
@@ -285,6 +367,22 @@ function verFoto(ruta: string | null) {
 
 <template>
   <div class="kardex-continuo-view">
+    <div v-if="lotePendiente" class="confirmacion-fondo">
+      <section role="dialog" aria-modal="true" aria-labelledby="titulo-confirmacion" class="confirmacion-dialogo">
+        <h2 id="titulo-confirmacion">Revisa los títulos antes de guardar</h2>
+        <p>Artículo seleccionado: <strong>{{ lotePendiente.articulo_nombre }}</strong></p>
+        <p>Estas páginas tienen encabezados diferentes. Comprueba si son variantes del mismo artículo.</p>
+        <ul>
+          <li v-for="diferencia in lotePendiente.diferencias" :key="diferencia.pagina">
+            Página {{ diferencia.pagina }}: {{ diferencia.titulo_detectado || '(sin título legible)' }}
+          </li>
+        </ul>
+        <p>La extracción ya está conservada. Confirmar no vuelve a escanear las imágenes.</p>
+        <p v-if="errorMsg" role="alert">{{ errorMsg }}</p>
+        <button class="btn-primary" :disabled="subiendo" @click="decidirLote(true)">Confirmar: mismo artículo y guardar</button>
+        <button class="btn-outline" :disabled="subiendo" @click="decidirLote(false)">Cancelar y revisar imágenes</button>
+      </section>
+    </div>
     <div class="header-nav">
       <router-link v-if="vistaActual === 'buscar'" to="/" class="btn-back"><i class="pi pi-arrow-left"></i> Panel Principal</router-link>
       <button v-else class="btn-back" @click="irABuscar" style="background:none;border:none;cursor:pointer;"><i class="pi pi-arrow-left"></i> Volver al Catálogo</button>
@@ -302,10 +400,7 @@ function verFoto(ruta: string | null) {
 
     <!-- PANTALLA 1: BUSCADOR -->
     <div v-if="vistaActual === 'buscar'" class="pantalla-buscar">
-      <div class="search-box">
-        <i class="pi pi-search search-icon"></i>
-        <input type="text" v-model="buscarTexto" placeholder="Buscar artículos ya escaneados por nombre o código..." class="search-input"/>
-      </div>
+      <BuscadorArticulos v-model="buscarTexto" placeholder="Buscar artículos escaneados por nombre o código…" />
 
       <div class="lista-articulos">
         <div v-for="art in articulosFiltrados" :key="art.id" class="articulo-card" @click="seleccionarArticulo(art)">
@@ -348,12 +443,42 @@ function verFoto(ruta: string | null) {
       <div class="upload-area">
         <h3>Subir Fotografías del Kárdex</h3>
         <div class="upload-controls">
-          <input type="file" multiple accept="image/*" @change="handleFileChange" class="file-input"/>
-          <button class="btn-primary" @click="subirLote" :disabled="subiendo || archivos.length === 0">
+          <input type="file" multiple accept="image/jpeg,image/png,image/webp" @change="handleFileChange" class="file-input" :disabled="subiendo"/>
+          <button class="btn-primary" @click="subirLote" :disabled="subiendo || archivos.length === 0 || !ordenConfirmado">
             {{ subiendo ? 'Extrayendo con IA...' : 'Procesar Imágenes' }}
           </button>
         </div>
-        <p class="hint" v-if="archivos.length > 0">{{ archivos.length }} archivo(s) seleccionado(s).</p>
+        <p class="orden-instruccion">JPEG, PNG o WebP · máximo {{ limitesCarga.paginas }} páginas, {{ limitesCarga.mb_imagen }} MB por imagen y {{ limitesCarga.mb_lote }} MB por lote. Se rechazan páginas repetidas dentro del lote antes de consumir IA.</p>
+        <template v-if="archivos.length > 0">
+          <p v-if="subiendo" role="status">
+            Procesando {{ archivos.length }} fotografías · {{ Math.floor(segundosProcesando / 60) }} min {{ segundosProcesando % 60 }} s.
+            Puede tardar varios minutos. Mantén esta pantalla abierta; no necesitas volver a enviar el lote.
+          </p>
+          <p class="orden-instruccion">
+            Verifica que la página 1 sea la hoja físicamente más antigua. El LLM procesará
+            exactamente este orden; las fechas no reorganizarán las filas.
+          </p>
+          <ol class="lista-paginas">
+            <li v-for="(item, indice) in archivos" :key="item.id" class="pagina-preview">
+              <span class="numero-pagina">{{ indice + 1 }}</span>
+              <img :src="item.previewUrl" :alt="`Página ${indice + 1}: ${item.archivo.name}`"/>
+              <div class="pagina-datos">
+                <strong>Página {{ indice + 1 }}</strong>
+                <span>{{ item.archivo.name }}</span>
+              </div>
+              <div class="pagina-acciones">
+                <button class="btn-outline btn-small" :disabled="subiendo || indice === 0" @click="moverArchivo(indice, -1)" title="Mover antes">↑</button>
+                <button class="btn-outline btn-small" :disabled="subiendo || indice === archivos.length - 1" @click="moverArchivo(indice, 1)" title="Mover después">↓</button>
+                <button class="btn-outline btn-small quitar-pagina" :disabled="subiendo" @click="eliminarArchivo(indice)" title="Quitar imagen">×</button>
+              </div>
+            </li>
+          </ol>
+          <label class="confirmar-orden">
+            <input type="checkbox" v-model="ordenConfirmado"/>
+            Confirmo que las {{ archivos.length }} páginas pertenecen a este artículo y están
+            ordenadas desde la más antigua hasta la más reciente.
+          </label>
+        </template>
       </div>
     </div>
 
@@ -387,15 +512,28 @@ function verFoto(ruta: string | null) {
       
       <!-- TAB 1: HISTORIAL -->
       <div v-else-if="subPestaña === 'historial'">
-        <table v-if="movimientos.length > 0" class="tabla-kardex">
+        <p v-if="movimientos.length > 0" class="ref">
+          {{ movimientos.length }} movimientos en {{ lotesVisibles.length }} escaneos.
+          Cada escaneo individual comienza en la página 1.
+        </p>
+        <div v-if="lotesVisibles.length > 1" class="tabs-container">
+          <button :class="['tab-btn', { active: loteSeleccionado === null }]" @click="loteSeleccionado = null">Todos</button>
+          <button v-for="id in lotesVisibles" :key="id"
+            :class="['tab-btn', { active: loteSeleccionado === id }]"
+            @click="loteSeleccionado = id">
+            Escaneo {{ numeroEscaneo(id) }} ({{ movimientos.filter(m => m.lote_id === id).length }})
+          </button>
+        </div>
+        <table v-if="movimientosMostrados.length > 0" class="tabla-kardex">
           <thead>
             <tr>
-              <th>Fecha</th><th>Detalle / Ref</th><th>Ingreso</th><th>Salida</th><th>Saldo</th><th>Nodo Clasificado</th><th>Auditoría</th>
+              <th>Escaneo</th><th>Fecha</th><th>Detalle / Ref</th><th>Ingreso</th><th>Salida</th><th>Saldo</th><th>Nodo Clasificado</th><th>Auditoría</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="mov in movimientos" :key="mov.id" :class="{'fila-error': mov.tiene_error_saldo, 'fila-dudosa': mov.requiere_auditoria_nodo}">
-              <td>{{ mov.fecha_movimiento }}</td>
+            <tr v-for="mov in movimientosMostrados" :key="mov.id" :class="{'fila-error': mov.tiene_error_saldo, 'fila-dudosa': mov.requiere_auditoria_nodo || mov.requiere_auditoria_referencia}">
+              <td>Escaneo {{ numeroEscaneo(mov.lote_id) }}<br/><small>Hoja {{ mov.numero_pagina }}</small></td>
+              <td>{{ mov.fecha_movimiento }}<small v-if="mov.tiene_error_fecha" class="fecha-hallazgo">{{ mov.fecha_estado === 'PENDIENTE_HIL' ? 'Fecha por revisar' : 'Fecha revisada: hallazgo conservado' }}</small></td>
               <td>
                 <strong>{{ mov.detalle }}</strong><br/>
                 <span class="ref">Ref: {{ mov.referencia || '-' }} | Área: {{ mov.area || '-' }}</span>
@@ -403,7 +541,10 @@ function verFoto(ruta: string | null) {
               <td>{{ mov.ingresos !== null ? mov.ingresos : '-' }}</td>
               <td>{{ mov.salidas !== null ? mov.salidas : '-' }}</td>
               <td><strong>{{ mov.saldo_registrado }}</strong></td>
-              <td>{{ mov.nodo_grafo || '-' }}</td>
+              <td>
+                {{ mov.nodo_grafo || '-' }}<br/>
+                <small>{{ mov.area_estado }}</small>
+              </td>
               <td>
                 <button class="btn-outline btn-small" @click="verFoto(mov.ruta_imagen_respaldo)" title="Ver Foto">📸 Foto</button>
               </td>
@@ -415,50 +556,37 @@ function verFoto(ruta: string | null) {
 
       <!-- TAB 2: AUDITORÍA HIL -->
       <div v-else-if="subPestaña === 'hil'">
-        <div v-if="erroresHIL.length === 0" class="empty-state">
-          <h3>¡Todo está perfecto!</h3>
-          <p>No se encontraron inconsistencias en este artículo.</p>
+        <div class="hil-filtros"><label>Tipo de revisión <select v-model="tipoHIL"><option value="">Todas</option><option value="saldo">Saldo</option><option value="fecha">Fecha</option><option value="area">Área / nodo</option><option value="referencia">Referencia</option></select></label><span>{{ erroresFiltrados.length }} filas pendientes. Una fila puede tener varias alertas.</span></div>
+        <p v-if="cargandoHistorial">Cargando revisiones…</p>
+        <div v-else-if="erroresFiltrados.length === 0" class="empty-state">
+          <h3>Sin alertas pendientes para este filtro</h3>
+          <p>Esto no equivale a una certificación humana integral del artículo.</p>
         </div>
         <table v-else class="tabla-kardex tabla-errores">
           <thead>
             <tr>
-              <th>Alerta</th><th>Fecha</th><th>Texto Original (OCR)</th><th>Ing/Sal</th><th>Saldo</th><th>Nodo Grafo Asignado</th><th>Acción HIL</th>
+              <th>Alerta</th><th>Fecha</th><th>Texto de consulta (original conservado)</th><th>Ing/Sal</th><th>Saldo</th><th>Nodo Grafo Asignado</th><th>Acción HIL</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="err in erroresHIL" :key="err.id" :class="{'fila-editando': filaEditando === err.id}">
+            <tr v-for="err in erroresFiltrados" :key="err.id">
               <td style="font-size: 1.2rem; text-align: center;">
-                <span v-if="err.tiene_error_saldo" title="Error Matemático">🔴</span>
-                <span v-if="err.requiere_auditoria_nodo" title="Clasificación Dudosa">🟡</span>
+                <span v-for="tipo in err.tipos_alerta" :key="tipo" class="alerta-tipo">{{ tipo }}</span>
               </td>
-              <td>{{ err.fecha_movimiento }}</td>
+              <td>{{ err.fecha_movimiento }}<small class="fecha-hallazgo">{{ err.fecha_estado }}</small><small v-if="err.fecha_original !== err.fecha_movimiento">Original: {{ err.fecha_original }}</small></td>
               <td class="detalle-col">
                 <strong>Detalle:</strong> {{ err.detalle || '-' }} <br/>
-                <strong>Ref:</strong> {{ err.referencia || '-' }} | <strong>Área:</strong> {{ err.area || '-' }}
+                <strong>Ref:</strong> {{ err.referencia || '-' }} ({{ err.referencia_estado }}) |
+                <strong>Área:</strong> {{ err.area || '-' }} ({{ err.area_estado }})
               </td>
               
-              <template v-if="filaEditando === err.id">
-                <td>
-                  <input type="number" v-model="editForm.ingresos" class="inline-edit" placeholder="Ing"/>
-                  <input type="number" v-model="editForm.salidas" class="inline-edit mt-1" placeholder="Sal"/>
-                </td>
-                <td><input type="number" v-model="editForm.saldo_registrado" class="inline-edit" placeholder="Saldo"/></td>
-                <td><input type="text" v-model="editForm.nodo_grafo" class="inline-edit text-edit" placeholder="Nodo Grafo"/></td>
-                <td>
-                  <button class="btn-primary btn-small mb-1" @click="guardarEdicionHIL(err)">Guardar</button>
-                  <button class="btn-outline btn-small" @click="cerrarEdicionHIL">Cancelar</button>
-                </td>
-              </template>
-              
-              <template v-else>
                 <td>I: {{ err.ingresos !== null ? err.ingresos : '-' }}<br/>S: {{ err.salidas !== null ? err.salidas : '-' }}</td>
                 <td>
-                  <span :class="{'error-val': err.tiene_error_saldo}">Papel: {{ err.saldo_registrado }}</span><br/>
+                  <span :class="{'error-val': err.tiene_error_saldo}">Registrado: {{ err.saldo_registrado }}</span><br/>
                   <span class="esperado-val" v-if="err.tiene_error_saldo">Calc: {{ err.saldo_calculado }}</span>
                 </td>
                 <td><span :class="{'nodo-dudoso': err.requiere_auditoria_nodo}">{{ err.nodo_grafo }}</span></td>
-                <td><button class="btn-outline btn-small" @click="iniciarEdicionHIL(err)">Resolver <i class="pi pi-check-circle"></i></button></td>
-              </template>
+                <td><button v-if="puedeCorregir" class="btn-outline btn-small" @click="iniciarEdicionHIL(err)">Revisar evidencia</button><button v-else class="btn-outline btn-small" @click="verFoto(err.ruta_imagen_respaldo)">Ver evidencia</button></td>
             </tr>
           </tbody>
         </table>
@@ -466,12 +594,11 @@ function verFoto(ruta: string | null) {
 
       <!-- TAB 3: GRAFO VISUAL -->
       <div v-else-if="subPestaña === 'grafo'">
-        <div class="grafo-wrapper">
-          <v-chart v-if="sankeyOption" class="chart" :option="sankeyOption" autoresize />
-          <div v-else class="text-center mt-5 text-muted">Cargando diagrama Sankey...</div>
-        </div>
+        <GrafoFlujoArticulo :key="articuloSeleccionado.id" :articulo-id="articuloSeleccionado.id" :nombre="articuloSeleccionado.nombre" />
       </div>
     </div>
+
+    <RevisionHil v-if="movimientoRevisando" :key="movimientoRevisando.id" :movimiento="movimientoRevisando" @guardar="guardarEdicionHIL" @cerrar="cerrarEdicionHIL" />
 
     <!-- Visor de fotos HIL Modal -->
     <div v-if="imagenAuditoria" class="visor-evidencia">
@@ -480,13 +607,17 @@ function verFoto(ruta: string | null) {
         <button class="btn-close" @click="imagenAuditoria = null">✖</button>
       </div>
       <div class="visor-body">
-        <img :src="`http://localhost:8000${imagenAuditoria}`" alt="Hoja de Kárdex" class="evidencia-img" />
+        <img :src="urlImagenAuditoria" alt="Hoja de Kárdex" class="evidencia-img" />
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.fecha-hallazgo { display: block; color: #985b1e; font-size: .75rem; }
+.hil-filtros { display: flex; align-items: center; gap: 1rem; padding: 1rem 0; flex-wrap: wrap; }
+.hil-filtros select { margin-left: .5rem; padding: .4rem; }
+.alerta-tipo { display: inline-block; padding: .2rem .4rem; margin: .2rem; background: #fff0dd; color: #8f5419; border-radius: 5px; font-size: .75rem; }
 .kardex-continuo-view {
   background: var(--bg-color);
   padding: 2.5rem;
@@ -509,9 +640,6 @@ function verFoto(ruta: string | null) {
 .header-nav h1 { margin: 0; }
 
 /* Buscador */
-.search-box { position: relative; margin-bottom: 2rem; }
-.search-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
-.search-input { padding-left: 2.5rem !important; font-size: 1.1rem !important; padding-top: 1rem !important; padding-bottom: 1rem !important; }
 .lista-articulos { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
 .articulo-card { border: 1px solid var(--border-color); padding: 1.25rem; border-radius: var(--radius); cursor: pointer; transition: all 0.2s; background: var(--bg-body); }
 .articulo-card:hover { border-color: var(--primary); background: var(--bg-subtle); transform: translateY(-2px); }
@@ -523,8 +651,25 @@ function verFoto(ruta: string | null) {
 .badge-alert.yellow { background: #fefce8; color: #854d0e; }
 .badge-alert.green { background: #ecfdf5; color: #065f46; }
 
+/* Orden previo de páginas */
+.confirmacion-fondo { position: fixed; inset: 0; z-index: 1100; background: #0008; display: grid; place-items: center; padding: 1rem; }
+.confirmacion-dialogo { background: var(--bg-body); padding: 1.5rem; border-radius: 12px; max-width: 720px; max-height: 90vh; overflow: auto; }
+.confirmacion-dialogo button { margin: 0.5rem; }
+.orden-instruccion { margin: 1rem 0; padding: 0.85rem 1rem; border-left: 4px solid #2563eb; background: #eff6ff; color: #1e3a8a; }
+.lista-paginas { list-style: none; margin: 1rem 0; padding: 0; display: grid; gap: 0.75rem; }
+.pagina-preview { display: flex; align-items: center; gap: 1rem; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-body); }
+.pagina-preview img { width: 72px; height: 92px; object-fit: cover; border: 1px solid var(--border-color); border-radius: 4px; }
+.numero-pagina { display: grid; place-items: center; min-width: 2rem; height: 2rem; border-radius: 999px; background: var(--primary); color: white; font-weight: 700; }
+.pagina-datos { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 0.2rem; }
+.pagina-datos span { overflow: hidden; color: var(--text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.pagina-acciones { display: flex; gap: 0.35rem; }
+.quitar-pagina { color: #991b1b; }
+.confirmar-orden { display: flex; align-items: flex-start; gap: 0.65rem; margin-top: 1rem; padding: 1rem; border-radius: var(--radius); background: #f8fafc; font-weight: 600; cursor: pointer; }
+.confirmar-orden input { width: 1.1rem; height: 1.1rem; margin-top: 0.15rem; }
+
 /* Tabs */
 .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); }
+.tabs-container { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); }
 .tab-btn { background: none; border: none; padding: 1rem 1.5rem; font-size: 1rem; color: var(--text-secondary); cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; display: flex; align-items: center; gap: 0.5rem; }
 .tab-btn:hover { color: var(--primary); }
 .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
@@ -552,8 +697,6 @@ function verFoto(ruta: string | null) {
 .evidencia-img { max-width: 100%; height: auto; border-radius: 4px; }
 
 /* Grafo */
-.grafo-wrapper { width: 100%; height: 600px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-body); }
-.chart { width: 100%; height: 100%; }
 
 /* Generales */
 .context-header { background: var(--bg-subtle); padding: 1rem 1.5rem; border-radius: var(--radius); margin-bottom: 1.5rem; border: 1px solid var(--border-color); }

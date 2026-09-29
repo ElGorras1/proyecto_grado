@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: str = "development"
     GEMINI_API_KEY: str | None = None
+    KARDEX_MAX_PAGINAS: int = 20
+    KARDEX_MAX_MB_IMAGEN: int = 20
+    KARDEX_MAX_MB_LOTE: int = 100
+    KARDEX_MAX_MEGAPIXELES: int = 60
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

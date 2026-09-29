@@ -18,3 +18,13 @@ frontend/coverage/
 .vscode/
 .idea/
 .DS_Store
+
+# Datos locales y archivos generados
+backend/backups/
+backend/storage/
+backend/.coverage
+backend/.ruff_cache/
+frontend/*.tsbuildinfo
+frontend/qa/*.png
+backend/count_rows.py
+backend/list_tables.py

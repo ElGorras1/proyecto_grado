@@ -1,5 +1,6 @@
 import os
 import time
+import logging
 from typing import List
 from google import genai
 from pydantic import ValidationError
@@ -7,6 +8,8 @@ from PIL import Image
 
 from app.core.config import settings
 from app.schemas.kardex import ExtraccionKardexHoja
+
+logger = logging.getLogger(__name__)
 
 # Prompt Maestro basado en los requerimientos del usuario
 PROMPT_MAESTRO = """Actúa como un auditor experto en digitalización de kárdex de almacén. 
@@ -81,7 +84,16 @@ def procesar_lote_imagenes(imagenes_paths: List[str]) -> List[ExtraccionKardexHo
     """
     resultados = []
     for i, path in enumerate(imagenes_paths):
-        resultado = procesar_imagen_kardex(path)
+        inicio = time.monotonic()
+        logger.info("Procesando página %s/%s: %s", i + 1, len(imagenes_paths), path)
+        try:
+            resultado = procesar_imagen_kardex(path)
+        except Exception as exc:
+            logger.exception("Falló página %s/%s", i + 1, len(imagenes_paths))
+            raise RuntimeError(
+                f"Falló la página {i + 1} de {len(imagenes_paths)}: {exc}"
+            ) from exc
+        logger.info("Página %s completada en %.1f s", i + 1, time.monotonic() - inicio)
         resultados.append(resultado)
         
         # Throttling preventivo más conservador (6 segundos -> 10 RPM max)

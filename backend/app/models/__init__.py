@@ -9,7 +9,7 @@ from app.models.movimientos import TipoMovimiento, Movimiento
 from app.models.legacy import DocumentoLegacy, ExtraccionLegacy, ValidacionLegacy
 from app.models.analitica import ResultadoRegla, EvaluacionAnomalia
 from app.models.auditoria import Alerta, CasoAuditoria, RevisionCaso, AuditoriaSistema
-from app.models.kardex import LoteCarga, MovimientoKardex
+from app.models.kardex import LoteCarga, MovimientoKardex, LotePendiente, SolicitudCargaKardex, MovimientoKardexArchivado
 
 __all__ = [
     "Rol",
@@ -34,4 +34,7 @@ __all__ = [
     "AuditoriaSistema",
     "LoteCarga",
     "MovimientoKardex",
+    "LotePendiente",
+    "SolicitudCargaKardex",
+    "MovimientoKardexArchivado",
 ]

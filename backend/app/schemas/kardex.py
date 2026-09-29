@@ -1,23 +1,48 @@
 from datetime import date
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from typing import List, Optional, Literal
+from pydantic import BaseModel, Field, model_validator
+
 
 class FilaKardex(BaseModel):
-    fecha: date = Field(description="Fecha del movimiento en formato YYYY-MM-DD. Si el año tiene 2 dígitos (ej 10) conviértelo al siglo correspondiente (2010).")
-    detalle: str = Field(description="Texto exacto de la columna DETALLE. Limpia espacios extra pero conserva el significado. No modifiques nombres de ferias ni descripciones.")
-    referencia: Optional[str] = Field(default=None, description="Texto de la columna REF. o documento de respaldo. Si está vacío devuelve null.")
-    area: Optional[str] = Field(default=None, description="Texto de la columna AREA. Si está vacío devuelve null.")
-    ingresos: Optional[int] = Field(default=None, description="Número en la columna INGRESOS. Si está vacía o tiene un guión, devuelve null.")
-    salidas: Optional[int] = Field(default=None, description="Número en la columna SALIDAS. Si está vacía o tiene un guión, devuelve null.")
+    fecha: date = Field(
+        description="Fecha del movimiento en formato YYYY-MM-DD. Si el año tiene 2 dígitos (ej 10) conviértelo al siglo correspondiente (2010)."
+    )
+    detalle: str = Field(
+        description="Texto exacto de la columna DETALLE. Limpia espacios extra pero conserva el significado. No modifiques nombres de ferias ni descripciones."
+    )
+    referencia: Optional[str] = Field(
+        default=None,
+        description="Texto de la columna REF. o documento de respaldo. Si está vacío devuelve null.",
+    )
+    area: Optional[str] = Field(
+        default=None, description="Texto de la columna AREA. Si está vacío devuelve null."
+    )
+    ingresos: Optional[int] = Field(
+        default=None,
+        description="Número en la columna INGRESOS. Si está vacía o tiene un guión, devuelve null.",
+    )
+    salidas: Optional[int] = Field(
+        default=None,
+        description="Número en la columna SALIDAS. Si está vacía o tiene un guión, devuelve null.",
+    )
     saldo_registrado: int = Field(description="Número en la columna SALDO. Es obligatorio.")
-    orden_fila: int = Field(description="Posición visual de la fila en la tabla de la hoja (1, 2, 3...).")
+    orden_fila: int = Field(
+        description="Posición visual de la fila en la tabla de la hoja (1, 2, 3...)."
+    )
+
 
 class ExtraccionKardexHoja(BaseModel):
-    nombre_articulo: str = Field(description="Nombre del artículo o producto que aparece en el encabezado de la hoja de kárdex (ej: 'MUSICA CHAPACA CD').")
-    filas: List[FilaKardex] = Field(description="Lista de todos los movimientos de la tabla de kárdex en orden estricto de arriba hacia abajo.")
+    nombre_articulo: str = Field(
+        description="Nombre del artículo o producto que aparece en el encabezado de la hoja de kárdex (ej: 'MUSICA CHAPACA CD')."
+    )
+    filas: List[FilaKardex] = Field(
+        description="Lista de todos los movimientos de la tabla de kárdex en orden estricto de arriba hacia abajo."
+    )
+
 
 class LoteCargaCreate(BaseModel):
     total_imagenes: int
+
 
 class MovimientoKardexCreate(BaseModel):
     articulo_id: int
@@ -33,10 +58,17 @@ class MovimientoKardexCreate(BaseModel):
     numero_pagina: Optional[int] = None
     orden_fila: Optional[int] = None
     tiene_error_saldo: bool = False
+    fecha_original: Optional[date] = None
+    datos_originales: Optional[dict] = None
+    tiene_error_fecha: bool = False
+    fecha_estado: str = "SIN_ALERTA"
     saldo_calculado: Optional[int] = None
     observaciones: Optional[str] = None
     nodo_grafo: Optional[str] = None
     requiere_auditoria_nodo: bool = False
+    area_estado: str = "PENDIENTE_HIL"
+    referencia_estado: str = "AUSENTE"
+    requiere_auditoria_referencia: bool = False
     # Transacciones modernas
     usuario_operador: Optional[str] = None
     tipo_operacion: Optional[str] = None
@@ -48,14 +80,32 @@ class MovimientoKardexCreate(BaseModel):
     referencia_documento: Optional[str] = None
     estado: str = "ACTIVO"
 
+
 class MovimientoKardexOut(MovimientoKardexCreate):
     id: int
+
     class Config:
         from_attributes = True
 
+
 class MovimientoKardexEdit(BaseModel):
-    ingresos: Optional[int] = None
-    salidas: Optional[int] = None
+    ingresos: Optional[int] = Field(None, ge=0)
+    salidas: Optional[int] = Field(None, ge=0)
     saldo_registrado: int
     nodo_grafo: Optional[str] = None
     requiere_auditoria_nodo: Optional[bool] = None
+    area_estado: Optional[Literal["RESUELTA_AUTOMATICAMENTE", "RESUELTA_POR_HUMANO", "SIN_AREA_REGISTRADA", "NO_APLICA", "AREA_NO_CATALOGADA", "PENDIENTE_HIL"]] = None
+    referencia_estado: Optional[Literal["PRESENTE", "AUSENTE", "ILEGIBLE", "INCIERTA"]] = None
+    requiere_auditoria_referencia: Optional[bool] = None
+    fecha_movimiento: Optional[date] = None
+    decision_fecha: Optional[Literal["corregir", "confirmar_documento"]] = None
+    motivo: str = Field(default="", max_length=1000)
+    referencia: Optional[str] = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def validar_decision_fecha(self):
+        if self.decision_fecha == "corregir" and self.fecha_movimiento is None:
+            raise ValueError("Indica la fecha corregida")
+        if self.fecha_movimiento is not None and self.decision_fecha != "corregir":
+            raise ValueError("Cambiar una fecha requiere la decisión corregir")
+        return self

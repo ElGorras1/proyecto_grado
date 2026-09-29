@@ -1,18 +1,30 @@
 :root {
   --bg-color: #ffffff;
-  --bg-subtle: #f3efe9;
-  --bg-body: #f9f8f4;
-  --text-primary: #332d29;
-  --text-secondary: #70675f;
-  --text-muted: #a69c91;
-  --border-color: #e8e4db;
-  --border-subtle: #f0ece5;
-  --primary: #857565;
-  --primary-hover: #6b5d4f;
-  --radius: 10px;
-  --shadow-sm: 0 2px 8px rgba(133, 117, 101, 0.04);
-  --shadow: 0 8px 24px rgba(133, 117, 101, 0.08);
+  color-scheme: light;
+  --bg-subtle: #edf3f7;
+  --bg-body: #f5f7fa;
+  --text-primary: #293e50;
+  --text-secondary: #586d7e;
+  --text-muted: #657b8c;
+  --border-color: #dce5ec;
+  --border-subtle: #edf1f5;
+  --primary: #436986;
+  --primary-hover: #34556f;
+  --radius: 12px;
+  --shadow-sm: 0 2px 8px rgba(35, 64, 87, 0.025);
+  --shadow: 0 12px 32px rgba(35, 64, 87, 0.08);
 }
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scrollbar-gutter: stable; }
+body { line-height: 1.5; }
+button, input, select, textarea { font: inherit; }
+a { color: var(--primary); }
+:where(a, button, summary, [tabindex]):focus-visible {
+  outline: 3px solid #7c9fb8;
+  outline-offset: 3px;
+}
+::selection { background: #dce9f2; color: #293e50; }
 
 body {
   margin: 0;
@@ -30,7 +42,7 @@ h1, h2, h3 {
 }
 
 /* Minimalist Containers */
-.login-card, .dashboard, .usuarios-view, .reporte-accesos, .admin-view {
+.usuarios-view, .reporte-accesos, .admin-view {
   background: var(--bg-color) !important;
   border: 1px solid var(--border-color) !important;
   box-shadow: var(--shadow-sm) !important;
@@ -40,7 +52,6 @@ h1, h2, h3 {
   padding: 2.5rem !important;
 }
 .login-container { background: var(--bg-body) !important; }
-.login-card { max-width: 380px !important; }
 
 /* Navigation / Back Button */
 .header-nav {
@@ -85,30 +96,29 @@ table {
   background: var(--bg-color);
   border: 1px solid var(--border-color) !important;
   border-radius: var(--radius) !important;
-  overflow: hidden !important;
 }
 th {
-  background: var(--bg-color) !important;
+  background: #f8fafc !important;
   color: var(--text-secondary) !important;
   font-size: 0.75rem !important;
   font-weight: 600 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.05em !important;
   padding: 1rem 1.25rem !important;
-  text-align: left !important;
+  text-align: left;
   border-bottom: 1px solid var(--border-color) !important;
 }
 td {
   padding: 1rem 1.25rem !important;
   font-size: 0.9rem !important;
-  color: var(--text-primary) !important;
+  color: var(--text-primary);
   border-bottom: 1px solid var(--border-subtle) !important;
 }
 tr:last-child td { border-bottom: none !important; }
 tr:hover td { background-color: var(--bg-subtle) !important; }
 
 /* Minimalist Forms */
-input, select, textarea {
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   width: 100%;
   padding: 0.6rem 0.85rem !important;
   border: 1px solid var(--border-color) !important;
@@ -123,8 +133,9 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus {
   outline: none !important;
   border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px rgba(133, 117, 101, 0.15) !important;
+  box-shadow: 0 0 0 3px rgba(67, 105, 134, 0.14) !important;
 }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); width: auto; }
 label {
   display: block;
   font-size: 0.8rem !important;
@@ -201,7 +212,7 @@ button:disabled, .btn:disabled {
 
 /* Minimalist Modals */
 .modal-backdrop {
-  background: rgba(51, 45, 41, 0.4) !important;
+  background: rgba(29, 48, 64, 0.4) !important;
   backdrop-filter: blur(3px) !important;
 }
 .modal {
@@ -219,4 +230,28 @@ button:disabled, .btn:disabled {
   padding-bottom: 1.5rem !important;
   margin-bottom: 2rem !important;
   border-radius: 0 !important;
+}
+
+/* Shared page rhythm. Keep status colors and graph data encodings intact. */
+#app :is(.usuarios-view, .reporte-accesos, .admin-view, .inventario-actual-view, .kardex-continuo-view, .reporte-view) {
+  width: calc(100% - 3rem);
+  max-width: 1360px;
+  margin: 2rem auto !important;
+  padding: clamp(1rem, 3vw, 2.5rem) !important;
+  border: 1px solid var(--border-color);
+}
+.header-nav { flex-wrap: wrap; }
+h1 { font-size: clamp(1.35rem, 2.4vw, 1.9rem); line-height: 1.25; }
+.articulo-card { box-shadow: none; }
+.orden-instruccion { border-left-color: var(--primary) !important; background: var(--bg-subtle) !important; color: var(--text-primary) !important; }
+@media (max-width: 600px) {
+  #app :is(.usuarios-view, .reporte-accesos, .admin-view, .inventario-actual-view, .kardex-continuo-view, .reporte-view) {
+    width: calc(100% - 1.5rem); margin: 1rem auto !important;
+  }
+  .lista-articulos { grid-template-columns: minmax(0, 1fr) !important; }
+  .header-nav { gap: .6rem; }
+  .modal { padding: 1.25rem !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }

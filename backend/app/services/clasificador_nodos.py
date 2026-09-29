@@ -1,120 +1,285 @@
-from typing import Tuple, Optional
-from thefuzz import fuzz
-from sqlalchemy.orm import Session
+from dataclasses import dataclass
+
 from sqlalchemy import text
+from sqlalchemy.orm import Session
+from thefuzz import fuzz
 
-UMBRAL_FUZZY = 80  # % mínimo de similitud para sugerir coincidencia
+UMBRAL_FUZZY = 80
 
-def _resolver_area_con_catalogo(area_texto: str, db: Optional[Session] = None) -> Tuple[str, bool]:
-    """
-    Intenta resolver un texto de área del OCR contra el catálogo maestro.
-    """
-    texto = area_texto.strip().upper()
+AREA_RESUELTA_AUTOMATICAMENTE = "RESUELTA_AUTOMATICAMENTE"
+AREA_RESUELTA_POR_HUMANO = "RESUELTA_POR_HUMANO"
+AREA_SIN_REGISTRAR = "SIN_AREA_REGISTRADA"
+AREA_NO_CATALOGADA = "AREA_NO_CATALOGADA"
+AREA_PENDIENTE_HIL = "PENDIENTE_HIL"
+AREA_NO_APLICA = "NO_APLICA"
+
+REFERENCIA_PRESENTE = "PRESENTE"
+REFERENCIA_AUSENTE = "AUSENTE"
+REFERENCIA_ILEGIBLE = "ILEGIBLE"
+REFERENCIA_INCIERTA = "INCIERTA"
+
+NODO_ORIGEN_NO_ESPECIFICADO = "Origen no especificado"
+NODO_DESTINO_NO_ESPECIFICADO = "Destino no especificado"
+NODO_AREA_NO_CATALOGADA = "Área no catalogada"
+NODO_PENDIENTE_CLASIFICACION = "Pendiente de clasificación"
+
+NODOS_LEGACY_NO_RESUELTOS = frozenset(
+    {
+        "Desconocido / Sin Asignar",
+        "Sin catalogar",
+        "Área: Sin asignar",
+        "Área: Sin catalogar",
+    }
+)
+
+ESTADOS_AREA_PENDIENTES = frozenset({AREA_NO_CATALOGADA, AREA_PENDIENTE_HIL})
+ESTADOS_REFERENCIA_PENDIENTES = frozenset({REFERENCIA_ILEGIBLE, REFERENCIA_INCIERTA})
+
+
+@dataclass(frozen=True)
+class ClasificacionMovimiento:
+    nodo_grafo: str
+    area_estado: str
+    referencia_estado: str
+    requiere_auditoria_nodo: bool
+    requiere_auditoria_referencia: bool
+
+
+def _texto_normalizado(valor: str | None) -> str:
+    return (valor or "").strip()
+
+
+def _parece_ilegible(texto: str) -> bool:
     if not texto:
-        return "Desconocido / Sin Asignar", True
-        
+        return False
+    if "�" in texto:
+        return True
+    return not any(caracter.isalnum() for caracter in texto)
+
+
+def clasificar_estado_referencia(referencia: str | None) -> tuple[str, bool]:
+    texto = _texto_normalizado(referencia)
+    if not texto or texto.upper() in {"-", "--", "N/A", "S/R", "SIN REF"}:
+        return REFERENCIA_AUSENTE, False
+    if _parece_ilegible(texto):
+        return REFERENCIA_ILEGIBLE, True
+
+    caracteres_utiles = sum(caracter.isalnum() for caracter in texto)
+    if caracteres_utiles / len(texto) < 0.35:
+        return REFERENCIA_INCIERTA, True
+    return REFERENCIA_PRESENTE, False
+
+
+def normalizar_nodo_grafo(
+    nodo: str | None,
+    ingresos: int = 0,
+    salidas: int = 0,
+) -> tuple[str, bool]:
+    """Normaliza valores antiguos sin convertirlos en una ubicación real."""
+    valor = _texto_normalizado(nodo)
+    if valor and valor not in NODOS_LEGACY_NO_RESUELTOS:
+        return valor, valor in {
+            NODO_AREA_NO_CATALOGADA,
+            NODO_PENDIENTE_CLASIFICACION,
+        }
+
+    if salidas > 0 and ingresos == 0:
+        return NODO_DESTINO_NO_ESPECIFICADO, False
+    if ingresos > 0 and salidas == 0:
+        return NODO_ORIGEN_NO_ESPECIFICADO, False
+    return NODO_PENDIENTE_CLASIFICACION, True
+
+
+def estado_area_para_nodo_manual(nodo: str) -> tuple[str, bool]:
+    if nodo in {NODO_ORIGEN_NO_ESPECIFICADO, NODO_DESTINO_NO_ESPECIFICADO}:
+        return AREA_SIN_REGISTRAR, False
+    if nodo == NODO_AREA_NO_CATALOGADA:
+        return AREA_NO_CATALOGADA, True
+    if nodo == NODO_PENDIENTE_CLASIFICACION:
+        return AREA_PENDIENTE_HIL, True
+    return AREA_RESUELTA_POR_HUMANO, False
+
+
+def _clasificar_operacion(
+    detalle: str,
+    referencia: str,
+    area: str,
+    ingreso: int,
+) -> str | None:
+    if any(marca in texto for marca in ("FIL", "FERIA") for texto in (detalle, referencia)):
+        if "DEV" in referencia or "DEV" in detalle or ingreso > 0:
+            return "Entrada: Devolución Feria"
+        return "Salida: Feria del Libro (FIL)"
+
+    if any(
+        marca in texto
+        for marca in ("OBS", "DONA", "OBSEQUIO")
+        for texto in (detalle, referencia, area)
+    ):
+        return "Salida: Obsequios y Donaciones"
+
+    if "VENTA" in detalle or "VENTA" in referencia:
+        return "Salida: Ventas"
+
+    if any(
+        marca in texto for marca in ("CONSIG", "CONIG") for texto in (detalle, referencia, area)
+    ):
+        return "Salida: Consignación"
+    return None
+
+
+def _resolver_area_con_catalogo(
+    area_texto: str,
+    db: Session | None,
+) -> tuple[str, str, bool]:
+    texto_area = area_texto.strip().upper()
+    if _parece_ilegible(texto_area):
+        return NODO_PENDIENTE_CLASIFICACION, AREA_PENDIENTE_HIL, True
     if not db:
-        return f"Área: {texto}", True
-    
+        return NODO_AREA_NO_CATALOGADA, AREA_NO_CATALOGADA, True
+
     try:
-        # Paso 1: Coincidencia exacta en catálogo
-        match = db.execute(
-            text("SELECT nombre_oficial FROM catalogo_areas WHERE UPPER(nombre_oficial) = :txt OR UPPER(abreviatura) = :txt"),
-            {"txt": texto}
+        coincidencia = db.execute(
+            text(
+                """
+                SELECT nombre_oficial
+                FROM catalogo_areas
+                WHERE UPPER(nombre_oficial) = :texto
+                   OR UPPER(abreviatura) = :texto
+                """
+            ),
+            {"texto": texto_area},
         ).fetchone()
-        
-        if match:
-            return f"Área: {match[0]}", False
-            
-        # Paso 2: Coincidencia en sinónimos confirmados
-        match = db.execute(
-            text("""
-                SELECT ca.nombre_oficial, sa.confirmado 
-                FROM sinonimos_area sa 
+        if coincidencia:
+            return (
+                f"Área: {coincidencia[0]}",
+                AREA_RESUELTA_AUTOMATICAMENTE,
+                False,
+            )
+
+        coincidencia = db.execute(
+            text(
+                """
+                SELECT ca.nombre_oficial, sa.confirmado
+                FROM sinonimos_area sa
                 JOIN catalogo_areas ca ON sa.area_oficial_id = ca.id
-                WHERE UPPER(sa.texto_sucio) = :txt
-            """), {"txt": texto}
+                WHERE UPPER(sa.texto_sucio) = :texto
+                """
+            ),
+            {"texto": texto_area},
         ).fetchone()
-        
-        if match:
-            return f"Área: {match[0]}", not match[1]
-            
-        # Paso 3: Fuzzy match
-        todas = db.execute(text("SELECT id, nombre_oficial, abreviatura FROM catalogo_areas")).fetchall()
-        
+        if coincidencia:
+            confirmado = bool(coincidencia[1])
+            return (
+                f"Área: {coincidencia[0]}",
+                AREA_RESUELTA_AUTOMATICAMENTE if confirmado else AREA_PENDIENTE_HIL,
+                not confirmado,
+            )
+
+        areas = db.execute(
+            text("SELECT id, nombre_oficial, abreviatura FROM catalogo_areas")
+        ).fetchall()
         mejor_score = 0
         mejor_area = None
         mejor_id = None
-        
-        for area_id, nombre, abrev in todas:
-            score_nombre = fuzz.ratio(texto, nombre.upper())
-            score_abrev = fuzz.ratio(texto, (abrev or "").upper()) if abrev else 0
-            score = max(score_nombre, score_abrev)
-            
+
+        for area_id, nombre, abreviatura in areas:
+            score_nombre = fuzz.ratio(texto_area, nombre.upper())
+            score_abreviatura = fuzz.ratio(texto_area, abreviatura.upper()) if abreviatura else 0
+            score = max(score_nombre, score_abreviatura)
             if score > mejor_score:
                 mejor_score = score
                 mejor_area = nombre
                 mejor_id = area_id
-                
+
         if mejor_score >= UMBRAL_FUZZY:
             try:
-                db.execute(text("""
-                    INSERT INTO sinonimos_area (texto_sucio, area_oficial_id, confirmado) 
-                    VALUES (:txt, :id, FALSE)
-                    ON CONFLICT (texto_sucio) DO NOTHING
-                """), {"txt": texto, "id": mejor_id})
-                db.commit()
-            except:
-                db.rollback()
-            return f"Área: {mejor_area}", True
-            
-        return f"Área: {texto}", True
-        
-    except Exception as e:
-        return f"Área: {texto}", True
+                with db.begin_nested():
+                    db.execute(
+                        text(
+                            """
+                            INSERT INTO sinonimos_area
+                                (texto_sucio, area_oficial_id, confirmado)
+                            VALUES (:texto, :area_id, FALSE)
+                            ON CONFLICT (texto_sucio) DO NOTHING
+                            """
+                        ),
+                        {"texto": texto_area, "area_id": mejor_id},
+                    )
+            except Exception:
+                pass
+            return f"Área: {mejor_area}", AREA_PENDIENTE_HIL, True
+
+        return NODO_AREA_NO_CATALOGADA, AREA_NO_CATALOGADA, True
+    except Exception:
+        return NODO_PENDIENTE_CLASIFICACION, AREA_PENDIENTE_HIL, True
 
 
-def clasificar_nodo_movimiento(detalle: Optional[str], ref: Optional[str], area: Optional[str], ingreso: Optional[int], salida: Optional[int], db: Optional[Session] = None) -> Tuple[str, bool]:
-    """
-    Motor Heurístico de Clasificación de Nodos para Teoría de Grafos.
-    Ahora integrado con el Catálogo Maestro de Áreas y Fuzzy Matching.
-    Retorna: (nombre_del_nodo, requiere_auditoria_hil)
-    """
-    d_text = (detalle or "").upper()
-    r_text = (ref or "").upper()
-    a_text = (area or "").upper()
-    
-    ing = ingreso if ingreso is not None else 0
-    sal = salida if salida is not None else 0
+def clasificar_movimiento(
+    detalle: str | None,
+    ref: str | None,
+    area: str | None,
+    ingreso: int | None,
+    salida: int | None,
+    db: Session | None = None,
+) -> ClasificacionMovimiento:
+    detalle_normalizado = _texto_normalizado(detalle).upper()
+    referencia_normalizada = _texto_normalizado(ref).upper()
+    area_normalizada = _texto_normalizado(area).upper()
+    cantidad_ingreso = ingreso or 0
+    cantidad_salida = salida or 0
+    referencia_estado, auditoria_referencia = clasificar_estado_referencia(ref)
 
-    # Regla 1: Ferias (FIL / FERIA)
-    if "FIL" in d_text or "FERIA" in d_text or "FIL" in r_text or "FERIA" in r_text:
-        if "DEV" in r_text or "DEV" in d_text or ing > 0:
-            return "Entrada: Devolución Feria", False
-        else:
-            return "Salida: Feria del Libro (FIL)", False
+    nodo_operacion = _clasificar_operacion(
+        detalle_normalizado,
+        referencia_normalizada,
+        area_normalizada,
+        cantidad_ingreso,
+    )
+    if nodo_operacion:
+        return ClasificacionMovimiento(
+            nodo_grafo=nodo_operacion,
+            area_estado=AREA_NO_APLICA,
+            referencia_estado=referencia_estado,
+            requiere_auditoria_nodo=False,
+            requiere_auditoria_referencia=auditoria_referencia,
+        )
 
-    # Regla 2: Obsequios y Donaciones
-    if "OBS" in d_text or "DONA" in d_text or "OBSEQUIO" in d_text or \
-       "OBS" in r_text or "DONA" in r_text or "OBSEQUIO" in r_text or \
-       "OBS" in a_text or "DONA" in a_text:
-        return "Salida: Obsequios y Donaciones", False
+    if area_normalizada:
+        nodo, area_estado, auditoria_nodo = _resolver_area_con_catalogo(
+            area_normalizada,
+            db,
+        )
+    elif cantidad_salida > 0 and cantidad_ingreso == 0:
+        nodo = NODO_DESTINO_NO_ESPECIFICADO
+        area_estado = AREA_SIN_REGISTRAR
+        auditoria_nodo = False
+    elif cantidad_ingreso > 0 and cantidad_salida == 0:
+        nodo = NODO_ORIGEN_NO_ESPECIFICADO
+        area_estado = AREA_SIN_REGISTRAR
+        auditoria_nodo = False
+    else:
+        nodo = NODO_PENDIENTE_CLASIFICACION
+        area_estado = AREA_PENDIENTE_HIL
+        auditoria_nodo = True
 
-    # Regla 3: Ventas
-    if "VENTA" in d_text or "VENTA" in r_text:
-        return "Salida: Ventas", False
+    return ClasificacionMovimiento(
+        nodo_grafo=nodo,
+        area_estado=area_estado,
+        referencia_estado=referencia_estado,
+        requiere_auditoria_nodo=auditoria_nodo,
+        requiere_auditoria_referencia=auditoria_referencia,
+    )
 
-    # Regla 4: Consignaciones
-    if "CONSIG" in d_text or "CONIG" in d_text or "CONSIG" in r_text or "CONIG" in r_text or "CONSIG" in a_text or "CONIG" in a_text:
-        return "Salida: Consignación", False
 
-    # Regla 5: Resolver Área con Catálogo Maestro + Fuzzy Match
-    if a_text.strip():
-        return _resolver_area_con_catalogo(a_text, db)
-        
-    # Si todo falla, y es un ingreso puro
-    if ing > 0 and sal == 0:
-        return "Entrada: Inventario / Compra", False
-
-    # Si todo falla y no hay pistas → HIL
-    return "Desconocido / Sin Asignar", True
+def clasificar_nodo_movimiento(
+    detalle: str | None,
+    ref: str | None,
+    area: str | None,
+    ingreso: int | None,
+    salida: int | None,
+    db: Session | None = None,
+) -> tuple[str, bool]:
+    """Compatibilidad temporal para consumidores que solo conocen nodo y HIL."""
+    clasificacion = clasificar_movimiento(detalle, ref, area, ingreso, salida, db)
+    return clasificacion.nodo_grafo, clasificacion.requiere_auditoria_nodo

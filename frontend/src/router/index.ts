@@ -35,6 +35,12 @@ const router = createRouter({
       meta: { roles: ['Administrador', 'Auditor'] },
     },
     {
+      path: '/reportes/inventario',
+      name: 'reporteInventario',
+      component: () => import('@/views/ReporteInventarioView.vue'),
+      meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
+    },
+    {
       path: '/kardex-digital',
       name: 'kardexDigital',
       component: () => import('@/views/KardexContinuoView.vue'),

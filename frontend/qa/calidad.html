@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>QA · Dashboard y HIL</title></head><body><div id="qa"></div><script type="module">
+import { createApp, ref, h } from 'vue'
+import { createPinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import Dashboard from '../src/views/DashboardView.vue'
+import App from '../src/App.vue'
+import Revision from '../src/components/RevisionHil.vue'
+import { useAuthStore } from '../src/stores/auth'
+import api from '../src/services/api'
+import '../src/assets/minimalist.css'
+import 'primeicons/primeicons.css'
+const fixture = {
+  gestion: 2026, inventario: { articulos: 80, saldo_ultimo_registrado: 7200, articulos_sin_movimientos: 1, articulos_sin_stock: 8 },
+  operaciones: { movimientos: 34, ingresos: 210, salidas: 90 },
+  calidad: { movimientos_historicos: 4200, pendientes: 425, sin_alertas: 3775, por_tipo: { saldo: 91, fecha: 161, area: 191, referencia: 12 }, articulos_digitalizados: 79, paginas: 210, lotes: 87 },
+  prioridad: [{ articulo_id: 1, nombre: 'Artículo ficticio para revisión', pendientes: 24 }],
+  mensual_moderno: Array.from({ length: 12 }, (_, i) => ({ mes: i+1, ingresos: i%3*70, salidas: i%2*30 })),
+  recientes: [{ id: 1, articulo: 'Libro ficticio', fecha: '2026-09-28', operacion: 'Ventas', ingresos: 0, salidas: 2, operador: 'Operador de prueba' }]
+}
+api.defaults.adapter = async config => {
+  if (config.method !== 'get') throw new Error('La vista QA no permite escrituras')
+  return { data: config.url === '/reportes/dashboard' ? fixture : [], status: 200, statusText: 'OK', headers: {}, config }
+}
+const movimiento = { id: 7, fecha_movimiento: '2018-04-02', fecha_original: '2018-04-02', fecha_estado: 'PENDIENTE_HIL', ingresos: null, salidas: 2, saldo_registrado: 8,
+  detalle: 'Entrega según registro físico', referencia: 'REF-12', area: null, nodo_grafo: 'Destino no especificado', referencia_estado: 'PRESENTE', ruta_imagen_respaldo: null,
+  datos_originales: { fuente: 'EXTRACCION_MLLM', fecha: '2018-04-02', salidas: 2, saldo_registrado: 8 } }
+const pinia = createPinia(); const auth = useAuthStore(pinia)
+auth.token = null; auth.usuario = { id: 1, nombre: 'Cuenta ficticia QA', email: 'qa@example.invalid', rol: 'Administrador', area_id: null }
+createApp({ setup() { const hil = ref(false); return () => h('div', [
+  h('div', { style: 'padding:.7rem;background:#24364b;color:white;position:sticky;top:0;z-index:1200' }, [
+    'Vista QA · datos ficticios · ninguna escritura ', h('button', { onClick: () => hil.value = !hil.value }, 'Ver formulario HIL')]),
+  h(App), hil.value ? h(Revision, { movimiento, onCerrar: () => hil.value = false }) : null
+]) }
+}).use(pinia).use(createRouter({ history: createMemoryHistory(), routes: [{ path: '/', name: 'dashboard', component: Dashboard }, ...['usuarios','admin','kardexDigital','inventarioVivo','reporteInventario','reporteAccesos','login'].map(name => ({ name, path: '/' + name, component: Dashboard }))] })).mount('#qa')
+</script></body></html>

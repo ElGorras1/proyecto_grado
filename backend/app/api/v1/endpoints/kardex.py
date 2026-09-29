@@ -2,8 +2,9 @@ import os
 import shutil
 import uuid
 import io
+import hashlib
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, status
 from pydantic import BaseModel
@@ -11,20 +12,49 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, case, text
 from starlette.concurrency import run_in_threadpool
 from PIL import Image
+from sqlalchemy.exc import IntegrityError
 
 from app.db.session import get_db
-from app.models.kardex import MovimientoKardex
+from app.models.kardex import MovimientoKardex, LotePendiente, SolicitudCargaKardex
 from app.models.activos import Activo, CategoriaActivo
 from app.models.usuario import Usuario
-from app.schemas.kardex import MovimientoKardexOut, MovimientoKardexEdit
+from app.models.auditoria import AuditoriaSistema
+from app.schemas.kardex import MovimientoKardexOut, MovimientoKardexEdit, ExtraccionKardexHoja
 from app.services.gemini_service import procesar_lote_imagenes
-from app.services.kardex_service import procesar_y_guardar_lote, recalcular_saldos_posteriores
+from app.services.kardex_service import (
+    procesar_y_guardar_lote,
+    recalcular_saldos_posteriores,
+    validar_paginas_lote,
+    diferencias_titulos,
+)
+from app.services.clasificador_nodos import (
+    AREA_NO_APLICA,
+    AREA_RESUELTA_AUTOMATICAMENTE,
+    ESTADOS_AREA_PENDIENTES,
+    NODO_AREA_NO_CATALOGADA,
+    NODO_DESTINO_NO_ESPECIFICADO,
+    NODO_ORIGEN_NO_ESPECIFICADO,
+    NODO_PENDIENTE_CLASIFICACION,
+    REFERENCIA_AUSENTE,
+    REFERENCIA_PRESENTE,
+    estado_area_para_nodo_manual,
+    normalizar_nodo_grafo,
+)
 from app.api.deps import get_current_user, require_roles
 from app.crud.auditoria import registrar_evento_auditoria
+from app.services.huella_lote import huella_de_paginas
+from app.services.calidad_kardex import pendiente_hil_sql, tipos_alerta, snapshot_original
+from app.services.validacion_carga import preparar_imagen, limites_carga
+from app.core.config import settings
 
 router = APIRouter()
 
 STORAGE_DIR = "storage/kardex_images"
+
+
+@router.get("/limites-carga")
+def limites_upload(current_user: Usuario = Depends(get_current_user)):
+    return limites_carga()
 
 # ============================================================
 # Schemas Locales
@@ -32,6 +62,10 @@ STORAGE_DIR = "storage/kardex_images"
 
 class NuevoArticulo(BaseModel):
     nombre: str
+
+
+class DecisionLote(BaseModel):
+    confirmar: bool
 
 class MovimientoActualCrear(BaseModel):
     articulo_id: int
@@ -66,54 +100,186 @@ async def upload_lote(
     if not activo:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
         
-    os.makedirs(STORAGE_DIR, exist_ok=True)
-    
-    # 1. Guardar archivos localmente (Comprimidos a WebP)
-    imagenes_paths = []
-    lote_uuid = str(uuid.uuid4())[:8]
-    
-    for idx, archivo in enumerate(archivos):
-        nuevo_nombre = f"lote_{lote_uuid}_pag_{idx+1}.webp"
-        ruta_completa = os.path.join(STORAGE_DIR, nuevo_nombre)
-        
-        img_bytes = await archivo.read()
+    # La identidad se calcula ANTES del OCR y antes de escribir nuevas fotos.
+    # Así un reintento tras una desconexión recibe el lote original.
+    paginas_webp = []
+    if not archivos or len(archivos) > settings.KARDEX_MAX_PAGINAS:
+        raise HTTPException(400, f"Selecciona de 1 a {settings.KARDEX_MAX_PAGINAS} páginas por lote")
+    total_bytes = 0
+    huellas_paginas = set()
+    for numero, archivo in enumerate(archivos, 1):
         try:
-            img = Image.open(io.BytesIO(img_bytes))
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
-            img.save(ruta_completa, "webp", quality=60)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Error procesando imagen: {e}")
-            
-        imagenes_paths.append(ruta_completa)
-        
-    # 2. Llamada a Gemini Flash en Threadpool para no bloquear el Event Loop
-    try:
-        paginas_extraidas = await run_in_threadpool(procesar_lote_imagenes, imagenes_paths)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en Gemini LLM: {str(e)}")
-        
-    # 3. Validar aritméticamente e insertar en BD
-    lote = procesar_y_guardar_lote(
-        db=db,
-        articulo_id=articulo_id,
-        paginas=paginas_extraidas,
-        imagenes_paths=imagenes_paths
-    )
-    
-    # Auditoría institucional
-    registrar_evento_auditoria(
-        db,
+            contenido = await archivo.read(settings.KARDEX_MAX_MB_IMAGEN * 1024 * 1024 + 1)
+            if len(contenido) > settings.KARDEX_MAX_MB_IMAGEN * 1024 * 1024:
+                raise ValueError(f"Supera el límite de {settings.KARDEX_MAX_MB_IMAGEN} MB por imagen")
+            total_bytes += len(contenido)
+            if total_bytes > settings.KARDEX_MAX_MB_LOTE * 1024 * 1024:
+                raise ValueError(f"El lote supera {settings.KARDEX_MAX_MB_LOTE} MB")
+            pagina = preparar_imagen(contenido, archivo.content_type)
+            huella_pagina = hashlib.sha256(pagina).digest()
+            if huella_pagina in huellas_paginas:
+                raise ValueError("Esta página está repetida dentro del mismo lote; retira la copia")
+            huellas_paginas.add(huella_pagina)
+            paginas_webp.append(pagina)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Página {numero}: {e}") from e
+    if not paginas_webp:
+        raise HTTPException(400, "Selecciona al menos una página")
+    huella = huella_de_paginas(paginas_webp)
+    solicitud = SolicitudCargaKardex(
+        articulo_id=articulo_id, huella=huella, estado="PROCESANDO",
         usuario_id=current_user.id,
-        accion="subir_lote_kardex",
-        recurso="lotes_carga",
-        recurso_id=lote.id,
-        resultado="exito",
-        ip_origen=request.client.host if request.client else None,
-        detalle={"articulo_id": articulo_id, "total_imagenes": len(archivos)}
     )
-    
-    return {"mensaje": "Lote procesado exitosamente", "lote_id": lote.id}
+    db.add(solicitud)
+    try:
+        db.commit()  # La restricción única arbitra solicitudes concurrentes.
+    except IntegrityError:
+        db.rollback()
+        solicitud = db.query(SolicitudCargaKardex).filter_by(
+            articulo_id=articulo_id, huella=huella,
+        ).first()
+        if not solicitud:
+            raise
+        if solicitud.estado == "COMPLETADO":
+            return {"mensaje": "Este lote ya estaba guardado", "lote_id": solicitud.lote_id,
+                    "duplicado": True}
+        if solicitud.estado == "PENDIENTE":
+            if solicitud.usuario_id != current_user.id:
+                raise HTTPException(409, "El lote espera confirmación de otro operador")
+            pendiente = db.get(LotePendiente, solicitud.pendiente_id)
+            if pendiente and pendiente.estado == "PENDIENTE":
+                datos = pendiente.extraccion
+                return {"requiere_confirmacion": True, "pendiente_id": pendiente.id,
+                        "articulo_nombre": datos["articulo_nombre"],
+                        "diferencias": datos["diferencias"], "duplicado": True}
+        if solicitud.estado in ("FALLIDO", "CANCELADO"):
+            # UPDATE condicional: dos reintentos simultáneos no pueden reclamar
+            # el mismo intento fallido para producir dos nuevos lotes.
+            reclamadas = db.query(SolicitudCargaKardex).filter(
+                SolicitudCargaKardex.id == solicitud.id,
+                SolicitudCargaKardex.estado.in_(("FALLIDO", "CANCELADO")),
+            ).update({"estado": "PROCESANDO", "pendiente_id": None,
+                      "usuario_id": current_user.id}, synchronize_session=False)
+            if reclamadas != 1:
+                db.rollback()
+                raise HTTPException(409, "Estas mismas páginas ya se están procesando. Espera antes de reintentar.")
+            db.commit()
+            solicitud = db.query(SolicitudCargaKardex).filter_by(
+                articulo_id=articulo_id, huella=huella,
+            ).one()
+        else:
+            raise HTTPException(409, "Estas mismas páginas ya se están procesando. Espera antes de reintentar.")
+
+    imagenes_paths = []
+    try:
+        os.makedirs(STORAGE_DIR, exist_ok=True)
+        lote_uuid = str(uuid.uuid4())[:8]
+        for idx, contenido in enumerate(paginas_webp, 1):
+            ruta = os.path.join(STORAGE_DIR, f"lote_{lote_uuid}_pag_{idx}.webp")
+            with open(ruta, "wb") as destino:
+                destino.write(contenido)
+            imagenes_paths.append(ruta)
+
+        try:
+            paginas_extraidas = await run_in_threadpool(procesar_lote_imagenes, imagenes_paths)
+        except Exception as e:
+            raise HTTPException(500, f"Error en Gemini LLM: {e}") from e
+        problemas_lote = validar_paginas_lote(paginas_extraidas)
+        if problemas_lote:
+            raise HTTPException(422, "Lote detenido antes de guardar: " + " ".join(problemas_lote))
+
+        diferencias = diferencias_titulos(activo.nombre, paginas_extraidas)
+        if diferencias:
+            pendiente = LotePendiente(
+                id=str(uuid.uuid4()), articulo_id=articulo_id, usuario_id=current_user.id,
+                extraccion={
+                    "paginas": [p.model_dump(mode="json") for p in paginas_extraidas],
+                    "imagenes_paths": imagenes_paths,
+                    "diferencias": diferencias,
+                    "articulo_nombre": activo.nombre,
+                },
+            )
+            db.add(pendiente)
+            solicitud.estado = "PENDIENTE"
+            solicitud.pendiente_id = pendiente.id
+            db.commit()
+            return {"requiere_confirmacion": True, "pendiente_id": pendiente.id,
+                    "articulo_nombre": activo.nombre, "diferencias": diferencias}
+
+        lote = procesar_y_guardar_lote(
+            db=db, articulo_id=articulo_id, paginas=paginas_extraidas,
+            imagenes_paths=imagenes_paths, confirmar=False,
+        )
+        solicitud.estado = "COMPLETADO"
+        solicitud.lote_id = lote.id
+        registrar_evento_auditoria(
+            db, usuario_id=current_user.id, accion="subir_lote_kardex",
+            recurso="lotes_carga", recurso_id=lote.id, resultado="exito",
+            ip_origen=request.client.host if request.client else None,
+            detalle={"articulo_id": articulo_id, "total_imagenes": len(archivos)},
+        )
+        return {"mensaje": "Lote procesado exitosamente", "lote_id": lote.id}
+    except Exception:
+        db.rollback()
+        # El cliente puede reintentar el mismo lote si OCR/almacenamiento falló.
+        solicitud = db.query(SolicitudCargaKardex).filter_by(
+            articulo_id=articulo_id, huella=huella,
+        ).first()
+        if solicitud and solicitud.estado == "PROCESANDO":
+            solicitud.estado = "FALLIDO"
+            db.commit()
+        raise
+
+
+@router.post("/lotes-pendientes/{pendiente_id}/decision")
+def decidir_lote(
+    pendiente_id: str,
+    payload: DecisionLote,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles("Administrador", "Operador")),
+):
+    pendiente = db.query(LotePendiente).filter(
+        LotePendiente.id == pendiente_id,
+        LotePendiente.usuario_id == current_user.id,
+    ).with_for_update().first()
+    if not pendiente:
+        raise HTTPException(404, "Extracción pendiente no encontrada")
+    if pendiente.estado == "CONFIRMADO" and payload.confirmar:
+        return {"lote_id": pendiente.lote_id, "mensaje": "Lote ya guardado"}
+    if pendiente.estado != "PENDIENTE":
+        if pendiente.estado == "CANCELADO" and not payload.confirmar:
+            return {"mensaje": "Lote cancelado"}
+        raise HTTPException(409, "La extracción ya tiene una decisión registrada")
+
+    datos = pendiente.extraccion
+    solicitud = db.query(SolicitudCargaKardex).filter_by(pendiente_id=pendiente.id).first()
+    if payload.confirmar:
+        lote = procesar_y_guardar_lote(
+            db, pendiente.articulo_id,
+            [ExtraccionKardexHoja.model_validate(p) for p in datos["paginas"]],
+            datos["imagenes_paths"], confirmar=False,
+        )
+        pendiente.lote_id = lote.id
+        pendiente.estado = "CONFIRMADO"
+        if solicitud:
+            solicitud.estado = "COMPLETADO"
+            solicitud.lote_id = lote.id
+    else:
+        pendiente.estado = "CANCELADO"
+        if solicitud:
+            solicitud.estado = "CANCELADO"
+    # Auditoría, decisión y movimientos se confirman juntos.
+    registrar_evento_auditoria(
+        db, usuario_id=current_user.id,
+        accion="confirmar_titulos_lote" if payload.confirmar else "cancelar_titulos_lote",
+        recurso="lotes_carga", recurso_id=pendiente.lote_id, resultado="exito",
+        ip_origen=request.client.host if request.client else None,
+        detalle={"pendiente_id": pendiente.id, "articulo_id": pendiente.articulo_id,
+                 "articulo_nombre": datos["articulo_nombre"],
+                 "diferencias": datos["diferencias"]},
+    )
+    return {"lote_id": pendiente.lote_id, "mensaje": "Lote guardado" if payload.confirmar else "Lote cancelado"}
 
 
 @router.put("/movimiento/{movimiento_id}", response_model=MovimientoKardexOut)
@@ -125,44 +291,95 @@ def update_movimiento_kardex(
     current_user: Usuario = Depends(require_roles("Administrador", "Operador"))
 ):
     """Permite corregir un movimiento legacy en Human-In-The-Loop y recalcula saldos en cascada."""
-    movimiento = db.query(MovimientoKardex).filter(MovimientoKardex.id == movimiento_id).first()
+    movimiento = db.query(MovimientoKardex).filter(MovimientoKardex.id == movimiento_id).with_for_update().first()
     if not movimiento:
         raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+    if movimiento.lote_id is None:
+        raise HTTPException(400, "El HIL solo corrige Kárdex histórico; no modifica operaciones modernas")
+    if not payload.motivo.strip():
+        raise HTTPException(400, "Indica el motivo y la evidencia de la revisión")
+    referencia_final = payload.referencia if "referencia" in payload.model_fields_set else movimiento.referencia
+    if payload.referencia_estado == "PRESENTE" and not (referencia_final or "").strip():
+        raise HTTPException(400, "Una referencia presente debe tener texto legible")
         
-    valores_previos = {
-        "ingresos": movimiento.ingresos,
-        "salidas": movimiento.salidas,
-        "saldo": movimiento.saldo_registrado,
-        "nodo": movimiento.nodo_grafo
-    }
+    campos_revision = ("ingresos", "salidas", "saldo_registrado", "nodo_grafo", "fecha_movimiento",
+                       "fecha_estado", "area_estado", "referencia", "referencia_estado")
+    def valores():
+        return {campo: (getattr(movimiento, campo).isoformat() if campo == "fecha_movimiento"
+                         else getattr(movimiento, campo)) for campo in campos_revision}
+    valores_previos = valores()
+    if movimiento.datos_originales is None:
+        movimiento.datos_originales = snapshot_original(movimiento)
+    if movimiento.fecha_original is None:
+        movimiento.fecha_original = movimiento.fecha_movimiento
+    if payload.decision_fecha == "corregir":
+        movimiento.fecha_movimiento = payload.fecha_movimiento
+        movimiento.fecha_estado = "CORREGIDA"
+    elif payload.decision_fecha == "confirmar_documento":
+        movimiento.fecha_estado = "CONFIRMADA_DOCUMENTO"
     
-    movimiento.ingresos = payload.ingresos
-    movimiento.salidas = payload.salidas
+    if "ingresos" in payload.model_fields_set:
+        movimiento.ingresos = payload.ingresos
+    if "salidas" in payload.model_fields_set:
+        movimiento.salidas = payload.salidas
     movimiento.saldo_registrado = payload.saldo_registrado
+    if "referencia" in payload.model_fields_set:
+        movimiento.referencia = payload.referencia.strip() if payload.referencia else None
     
     if payload.nodo_grafo is not None:
-        movimiento.nodo_grafo = payload.nodo_grafo
-        movimiento.requiere_auditoria_nodo = False
+        nodo_grafo, _ = normalizar_nodo_grafo(
+            payload.nodo_grafo,
+            movimiento.ingresos or 0,
+            movimiento.salidas or 0,
+        )
+        area_estado, requiere_auditoria = estado_area_para_nodo_manual(nodo_grafo)
+        movimiento.nodo_grafo = nodo_grafo
+        movimiento.area_estado = area_estado
+        movimiento.requiere_auditoria_nodo = requiere_auditoria
+
+    if payload.area_estado is not None:
+        movimiento.area_estado = payload.area_estado
+        movimiento.requiere_auditoria_nodo = (
+            payload.area_estado in ESTADOS_AREA_PENDIENTES
+        )
+
+    if payload.referencia_estado is not None:
+        movimiento.referencia_estado = payload.referencia_estado
+        movimiento.requiere_auditoria_referencia = (
+            payload.referencia_estado in {"ILEGIBLE", "INCIERTA"}
+        )
         
-    db.commit()
-    
-    # Recalcular balance posterior
-    recalcular_saldos_posteriores(db, movimiento.articulo_id)
-    db.refresh(movimiento)
-    
-    # Auditoría institucional
-    registrar_evento_auditoria(
-        db,
-        usuario_id=current_user.id,
-        accion="corregir_kardex_hil",
-        recurso="movimientos_kardex",
-        recurso_id=movimiento_id,
-        resultado="exito",
-        ip_origen=request.client.host if request.client else None,
-        detalle={"previo": valores_previos, "nuevo": payload.model_dump()}
-    )
+    # Corrección, recalculo y auditoría se confirman juntos; no quedan cambios sin autoría.
+    try:
+        recalcular_saldos_posteriores(db, movimiento.articulo_id, confirmar=False)
+        registrar_evento_auditoria(
+            db, usuario_id=current_user.id, accion="corregir_kardex_hil",
+            recurso="movimientos_kardex", recurso_id=movimiento_id, resultado="exito",
+            ip_origen=request.client.host if request.client else None,
+            detalle={"previo": valores_previos, "nuevo": valores(), "motivo": payload.motivo.strip(),
+                     "decision_fecha": payload.decision_fecha}
+        )
+    except Exception:
+        db.rollback()
+        raise
     
     return movimiento
+
+
+@router.get("/movimiento/{movimiento_id}/revisiones")
+def revisiones_movimiento(
+    movimiento_id: int, db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    if not db.get(MovimientoKardex, movimiento_id):
+        raise HTTPException(404, "Movimiento no encontrado")
+    registros = db.query(AuditoriaSistema, Usuario.nombre).outerjoin(
+        Usuario, Usuario.id == AuditoriaSistema.usuario_id
+    ).filter(AuditoriaSistema.accion == "corregir_kardex_hil",
+             AuditoriaSistema.recurso == "movimientos_kardex",
+             AuditoriaSistema.recurso_id == movimiento_id).order_by(AuditoriaSistema.id.desc()).all()
+    return [{"id": a.id, "fecha": a.fecha_hora, "usuario": nombre or "Usuario no disponible",
+             "detalle": a.detalle} for a, nombre in registros]
 
 
 # ============================================================
@@ -221,7 +438,11 @@ def get_articulos_typeahead(
 ):
     """Listado de artículos con conteo de alertas y stock actual calculado."""
     sum_rojas = func.sum(case((MovimientoKardex.tiene_error_saldo == True, 1), else_=0)).label('rojas')
-    sum_amarillas = func.sum(case((MovimientoKardex.requiere_auditoria_nodo == True, 1), else_=0)).label('amarillas')
+    sum_amarillas = func.sum(case((or_(
+        MovimientoKardex.requiere_auditoria_nodo == True,
+        MovimientoKardex.requiere_auditoria_referencia == True,
+        MovimientoKardex.fecha_estado == "PENDIENTE_HIL",
+    ), 1), else_=0)).label('amarillas')
     
     resultados = db.query(Activo.id, Activo.nombre, Activo.codigo, sum_rojas, sum_amarillas)\
         .outerjoin(MovimientoKardex, Activo.id == MovimientoKardex.articulo_id)\
@@ -248,27 +469,34 @@ def get_articulos_typeahead(
 
 @router.get("/errores")
 def get_errores_human_in_the_loop(
-    articulo_id: Optional[int] = None, 
+    articulo_id: Optional[int] = None,
+    tipo: Optional[Literal["saldo", "fecha", "area", "referencia"]] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
     """Retorna movimientos con error de saldo o nodo dudoso para revisión HIL."""
     query = db.query(MovimientoKardex, Activo.nombre.label("articulo_nombre"))\
         .join(Activo, MovimientoKardex.articulo_id == Activo.id)\
-        .filter(or_(
-            MovimientoKardex.tiene_error_saldo == True,
-            MovimientoKardex.requiere_auditoria_nodo == True
-        ))
+        .filter(MovimientoKardex.lote_id.isnot(None), MovimientoKardex.estado == "ACTIVO", pendiente_hil_sql())
         
     if articulo_id:
         query = query.filter(MovimientoKardex.articulo_id == articulo_id)
         
-    errores = query.order_by(Activo.nombre.asc(), MovimientoKardex.fecha_movimiento.asc()).all()
+    if tipo:
+        condiciones = {"saldo": MovimientoKardex.tiene_error_saldo.is_(True),
+                       "fecha": MovimientoKardex.fecha_estado == "PENDIENTE_HIL",
+                       "area": or_(MovimientoKardex.requiere_auditoria_nodo.is_(True), MovimientoKardex.area_estado.in_(ESTADOS_AREA_PENDIENTES)),
+                       "referencia": or_(MovimientoKardex.requiere_auditoria_referencia.is_(True), MovimientoKardex.referencia_estado.in_(("ILEGIBLE", "INCIERTA")))}
+        query = query.filter(condiciones[tipo])
+    errores = query.order_by(Activo.nombre.asc(), MovimientoKardex.lote_id.asc(),
+                             MovimientoKardex.numero_pagina.asc(), MovimientoKardex.orden_fila.asc(),
+                             MovimientoKardex.id.asc()).all()
         
     resultado = []
     for mov, articulo_nombre in errores:
         dto = MovimientoKardexOut.model_validate(mov).model_dump()
         dto["articulo_nombre"] = articulo_nombre
+        dto["tipos_alerta"] = tipos_alerta(mov)
         if dto.get("ruta_imagen_respaldo"):
             path = dto["ruta_imagen_respaldo"].replace("\\", "/")
             dto["url_imagen"] = f"/{path}" 
@@ -279,36 +507,88 @@ def get_errores_human_in_the_loop(
 
 @router.get("/grafo/{articulo_id}")
 def get_grafo_articulo(
-    articulo_id: int, 
+    articulo_id: int,
+    incluir_pendientes: bool = True,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Genera nodos y enlaces de Teoría de Grafos para el diagrama Sankey."""
+    """Genera nodos y enlaces dirigidos; un área puede tener entradas y salidas."""
     movimientos = db.query(
-        MovimientoKardex.nodo_grafo, 
+        MovimientoKardex.nodo_grafo,
+        MovimientoKardex.area_estado,
         func.sum(MovimientoKardex.ingresos).label("total_ingresos"),
         func.sum(MovimientoKardex.salidas).label("total_salidas")
     ).filter(
-        MovimientoKardex.articulo_id == articulo_id,
-        MovimientoKardex.nodo_grafo.isnot(None)
-    ).group_by(MovimientoKardex.nodo_grafo).all()
+        MovimientoKardex.articulo_id == articulo_id
+    ).group_by(
+        MovimientoKardex.nodo_grafo,
+        MovimientoKardex.area_estado,
+    ).all()
     
-    nodos_vistos = set(["Almacén Central"])
-    links = []
-    
+    totales_por_nodo = {}
     for mov in movimientos:
-        nodo = mov.nodo_grafo
+        total_ingresos = int(mov.total_ingresos or 0)
+        total_salidas = int(mov.total_salidas or 0)
+        nodo, pendiente_legacy = normalizar_nodo_grafo(
+            mov.nodo_grafo,
+            total_ingresos,
+            total_salidas,
+        )
+        pendiente = mov.area_estado in ESTADOS_AREA_PENDIENTES or pendiente_legacy
+        if pendiente and not incluir_pendientes:
+            continue
+        totales = totales_por_nodo.setdefault(
+            nodo,
+            {"ingresos": 0, "salidas": 0, "requiere_auditoria": False},
+        )
+        totales["ingresos"] += total_ingresos
+        totales["salidas"] += total_salidas
+        totales["requiere_auditoria"] = (
+            totales["requiere_auditoria"] or pendiente
+        )
+
+    nodos_vistos = {"Almacén Central"}
+    links = []
+
+    for nodo, totales in totales_por_nodo.items():
         nodos_vistos.add(nodo)
-        
-        tot_in = int(mov.total_ingresos or 0)
-        tot_out = int(mov.total_salidas or 0)
-        
+
+        tot_in = totales["ingresos"]
+        tot_out = totales["salidas"]
+
         if tot_out > 0:
             links.append({"source": "Almacén Central", "target": nodo, "value": tot_out})
         if tot_in > 0:
             links.append({"source": nodo, "target": "Almacén Central", "value": tot_in})
             
-    nodos = [{"name": n} for n in nodos_vistos]
+    nodos = []
+    for nombre in nodos_vistos:
+        nodo = {
+            "name": nombre,
+            "requiere_auditoria": totales_por_nodo.get(nombre, {}).get("requiere_auditoria", False),
+        }
+        if nombre == NODO_AREA_NO_CATALOGADA:
+            nodo.update({
+                "tipo": "no_catalogada",
+                "requiere_auditoria": True,
+                "itemStyle": {"color": "#f59e0b"},
+            })
+        elif nombre == NODO_PENDIENTE_CLASIFICACION:
+            nodo.update({
+                "tipo": "pendiente_hil",
+                "requiere_auditoria": True,
+                "itemStyle": {"color": "#ef4444"},
+            })
+        elif nombre in {
+            NODO_ORIGEN_NO_ESPECIFICADO,
+            NODO_DESTINO_NO_ESPECIFICADO,
+        }:
+            nodo.update({
+                "tipo": "sin_area_registrada",
+                "requiere_auditoria": False,
+                "itemStyle": {"color": "#64748b"},
+            })
+        nodos.append(nodo)
     return {"nodes": nodos, "links": links}
 
 
@@ -364,7 +644,12 @@ def get_historial_kardex(
             MovimientoKardex.articulo_id == articulo_id,
             MovimientoKardex.lote_id.isnot(None)
         )\
-        .order_by(MovimientoKardex.fecha_movimiento.asc(), MovimientoKardex.numero_pagina.asc(), MovimientoKardex.orden_fila.asc())\
+        .order_by(
+            MovimientoKardex.lote_id.asc(),
+            MovimientoKardex.numero_pagina.asc().nullslast(),
+            MovimientoKardex.orden_fila.asc().nullslast(),
+            MovimientoKardex.id.asc()
+        )\
         .all()
     return movimientos
 
@@ -403,6 +688,8 @@ def registrar_movimiento_actual(
     """
     if payload.cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a 0.")
+    if not payload.nodo_grafo.strip():
+        raise HTTPException(status_code=400, detail="Debe seleccionar un nodo para la operación.")
 
     # 1. Obtener el último saldo con BLOQUEO DE FILA para evitar Race Conditions
     ultimo_mov = db.query(MovimientoKardex)\
@@ -434,7 +721,18 @@ def registrar_movimiento_actual(
         saldo_calculado=nuevo_saldo,
         tiene_error_saldo=False,
         requiere_auditoria_nodo=False,
+        requiere_auditoria_referencia=False,
         nodo_grafo=payload.nodo_grafo,
+        area_estado=(
+            AREA_RESUELTA_AUTOMATICAMENTE
+            if payload.nodo_grafo.startswith("Área: ")
+            else AREA_NO_APLICA
+        ),
+        referencia_estado=(
+            REFERENCIA_PRESENTE
+            if payload.referencia_documento
+            else REFERENCIA_AUSENTE
+        ),
         observaciones=payload.observaciones or "Registro digital",
         estado="ACTIVO",
         # Campos enriquecidos

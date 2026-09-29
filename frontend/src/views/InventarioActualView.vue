@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import api from '@/services/api'
+import BuscadorArticulos from '@/components/BuscadorArticulos.vue'
 
 interface Articulo {
   id: number
@@ -291,10 +292,7 @@ async function anularTransaccion(movId: number) {
     <!-- PANTALLA BUSCAR -->
     <div v-if="vistaActual === 'buscar'" class="pantalla-buscar">
       <p class="subtitle">Selecciona un artículo para ver su stock actual y registrar operaciones en vivo.</p>
-      <div class="search-box">
-        <i class="pi pi-search search-icon"></i>
-        <input type="text" v-model="buscarTexto" placeholder="Buscar producto..." class="search-input"/>
-      </div>
+      <BuscadorArticulos v-model="buscarTexto" />
 
       <div class="lista-articulos">
         <div v-for="art in articulosFiltrados" :key="art.id" class="articulo-card" @click="verDetalle(art)">
@@ -506,9 +504,6 @@ async function anularTransaccion(movId: number) {
 .header-nav { display: flex; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1.5rem; gap: 1rem;}
 .header-nav h1 { margin: 0; }
 .subtitle { color: var(--text-secondary); margin-bottom: 1.5rem; }
-.search-box { position: relative; margin-bottom: 2rem; }
-.search-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
-.search-input { padding-left: 2.5rem !important; font-size: 1.1rem !important; padding-top: 1rem !important; padding-bottom: 1rem !important; width: 100%;}
 .lista-articulos { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
 .articulo-card { border: 1px solid var(--border-color); padding: 1.25rem; border-radius: var(--radius); cursor: pointer; transition: all 0.2s; background: var(--bg-body); }
 .articulo-card:hover { border-color: var(--primary); background: var(--bg-subtle); transform: translateY(-2px); }
