@@ -1,8 +1,10 @@
 from datetime import datetime
+from ipaddress import ip_address
 from typing import Any
 
-from sqlalchemy import String, Text, ForeignKey, DateTime, JSON
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import INET
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.db.session import Base
 
@@ -68,5 +70,15 @@ class AuditoriaSistema(Base):
     recurso_id: Mapped[int | None] = mapped_column()
     resultado: Mapped[str] = mapped_column(String(20), nullable=False)  # exito/rechazo/error
     fecha_hora: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    ip_origen: Mapped[str | None] = mapped_column(String(45))  # INET en Postgres, String en ORM
+    ip_origen: Mapped[str | None] = mapped_column(String(45).with_variant(INET(), "postgresql"))
     detalle: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    @validates("ip_origen")
+    def validar_ip(self, _, valor):
+        if valor is None:
+            return None
+        try:
+            return str(ip_address(valor))
+        except (ValueError, TypeError):
+            # Un transporte local puede proporcionar un nombre, no una dirección IP.
+            return None

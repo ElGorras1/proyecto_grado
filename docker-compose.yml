@@ -12,7 +12,8 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
       # Se ejecuta automáticamente la primera vez que se crea el contenedor:
-      - ./backend/init_db/initial_schema.sql:/docker-entrypoint-initdb.d/01_initial_schema.sql
+      - ./backend/migrations/esquema_n49.sql:/docker-entrypoint-initdb.d/01_baseline.sql:ro
+      - ./backend/init_db/02_stamp_baseline.sql:/docker-entrypoint-initdb.d/02_stamp_baseline.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U activos_user -d activos_db"]
       interval: 5s

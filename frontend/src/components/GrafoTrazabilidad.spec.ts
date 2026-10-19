@@ -9,6 +9,15 @@ import GrafoTrazabilidad from '@/components/GrafoTrazabilidad.vue'
 vi.mock('cytoscape', () => ({
   default: vi.fn(() => ({
     destroy: vi.fn(),
+    style: () => {
+      const style = { selector: () => style, style: () => style, update: vi.fn() }
+      return style
+    },
+    on: vi.fn(),
+    resize: vi.fn(),
+    fit: vi.fn(),
+    nodes: () => ({ unselect: vi.fn() }),
+    getElementById: () => ({ select: vi.fn() }),
   })),
 }))
 
@@ -24,5 +33,6 @@ describe('GrafoTrazabilidad', () => {
       },
     })
     expect(wrapper.find('.grafo-container').exists()).toBe(true)
+    wrapper.unmount()
   })
 })

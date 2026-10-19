@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
-import GrafoFlujoArticulo from '@/components/GrafoFlujoArticulo.vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import TrazabilidadArticulo from '@/components/TrazabilidadArticulo.vue'
 import RevisionHil from '@/components/RevisionHil.vue'
+import MarcaDocumental from '@/components/MarcaDocumental.vue'
+import ObservacionHilArticulo from '@/components/ObservacionHilArticulo.vue'
 import BuscadorArticulos from '@/components/BuscadorArticulos.vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { categoriasHil, type TratamientoHil } from '@/services/tratamientoHil'
 
 
 // Tipos
@@ -15,11 +18,13 @@ interface Articulo {
   codigo: string
   alertas_rojas: number
   alertas_amarillas: number
+  observacion_hil?: { observado: boolean; excluir_entrenamiento: boolean; motivo: string } | null
 }
 
 interface Movimiento {
   id: number
   lote_id: number | null
+  tanda: number | null
   fecha_movimiento: string
   detalle: string
   referencia: string | null
@@ -43,6 +48,10 @@ interface Movimiento {
   tiene_error_fecha: boolean
   fecha_estado: string
   tipos_alerta: string[]
+  revision_documental?: Record<string, any> | null
+  tratamiento_hil?: TratamientoHil | null
+  orden_pagina_validado?: number | null
+  estado?: string
 }
 
 interface ArchivoKardex {
@@ -55,29 +64,44 @@ interface ArchivoKardex {
 const articulos = ref<Articulo[]>([])
 const articuloSeleccionado = ref<Articulo | null>(null)
 const buscarTexto = ref('')
+const filtroObservacion = ref('todos')
 const errorMsg = ref('')
 const mensajeExito = ref('')
 
 // Vistas
 const vistaActual = ref<'buscar' | 'crear' | 'historial' | 'subir_lote'>('buscar')
-const subPestaña = ref<'historial' | 'hil' | 'grafo'>('historial')
+const subPestaña = ref<'historial' | 'hil' | 'grafo' | 'cobertura'>('historial')
 
 // Historial y Errores
 const movimientos = ref<Movimiento[]>([])
 const erroresHIL = ref<Movimiento[]>([])
 const cargandoHistorial = ref(false)
 const loteSeleccionado = ref<number | null>(null)
+const tandaSeleccionada = ref<number | null>(null)
+const tandaActual = ref<number | null>(null)
+const resumenTandas = ref<{ id: number; nombre: string; movimientos: number; escaneos: number }[]>([])
+const movimientosTanda = computed(() => movimientos.value.filter(m => tandaSeleccionada.value === null || m.tanda === tandaSeleccionada.value))
+watch(tandaSeleccionada, () => { loteSeleccionado.value = null })
+async function cargarTandas() {
+  try {
+    const { data } = await api.get('/kardex/tandas')
+    resumenTandas.value = data.tandas
+    tandaActual.value = data.tanda_nuevas_cargas
+  }
+  catch { errorMsg.value = 'No se pudo cargar el resumen de tandas.' }
+}
 const lotesVisibles = computed(() =>
-  [...new Set(movimientos.value.map(m => m.lote_id).filter((id): id is number => id !== null))]
+  [...new Set(movimientosTanda.value.map(m => m.lote_id).filter((id): id is number => id !== null))]
     .sort((a, b) => a - b)
 )
 const movimientosMostrados = computed(() => loteSeleccionado.value === null
-  ? movimientos.value
-  : movimientos.value.filter(m => m.lote_id === loteSeleccionado.value)
+  ? movimientosTanda.value
+  : movimientosTanda.value.filter(m => m.lote_id === loteSeleccionado.value)
 )
 
 function numeroEscaneo(loteId: number | null): number {
-  return loteId === null ? 0 : lotesVisibles.value.indexOf(loteId) + 1
+  const todos = [...new Set(movimientos.value.map(m => m.lote_id).filter((id): id is number => id !== null))].sort((a, b) => a - b)
+  return loteId === null ? 0 : todos.indexOf(loteId) + 1
 }
 
 // Subida de Lote
@@ -85,10 +109,17 @@ const archivos = ref<ArchivoKardex[]>([])
 const ordenConfirmado = ref(false)
 const lotePendiente = ref<{
   pendiente_id: string
+  tanda: number
   articulo_nombre: string
   diferencias: { pagina: number; titulo_detectado: string }[]
 } | null>(null)
 const subiendo = ref(false)
+const solicitudesCarga = ref<{ id: number; estado: string; tanda: number; lote_id: number | null; intento: number; reintentable: boolean }[]>([])
+async function cargarSolicitudes() {
+  if (!articuloSeleccionado.value) return
+  try { solicitudesCarga.value = (await api.get(`/kardex/solicitudes?articulo_id=${articuloSeleccionado.value.id}`)).data }
+  catch { /* la carga puede seguir; se conserva el mensaje principal de conexión */ }
+}
 const segundosProcesando = ref(0)
 let relojCarga: ReturnType<typeof setInterval> | undefined
 
@@ -99,10 +130,65 @@ const creandoArticulo = ref(false)
 // Auditoría y Edición (HIL)
 const movimientoRevisando = ref<Movimiento | null>(null)
 const tipoHIL = ref('')
-const erroresFiltrados = computed(() => erroresHIL.value.filter(m => !tipoHIL.value || m.tipos_alerta.includes(tipoHIL.value)))
+const estadoTratamientoHIL = ref('')
+const categoriaHIL = ref('')
+const erroresPorTanda = computed(() => erroresHIL.value.filter(m => tandaSeleccionada.value === null || m.tanda === tandaSeleccionada.value))
+const categorizadosHIL = computed(() => erroresPorTanda.value.filter(m => m.tratamiento_hil?.estado === 'CATEGORIZADO_CON_MARCA').length)
+const erroresFiltrados = computed(() => erroresPorTanda.value.filter(m =>
+  (!tipoHIL.value || m.tipos_alerta.includes(tipoHIL.value)) &&
+  (!estadoTratamientoHIL.value || (m.tratamiento_hil?.estado ?? 'POR_CATEGORIZAR') === estadoTratamientoHIL.value) &&
+  (!categoriaHIL.value || m.tratamiento_hil?.categorias.includes(categoriaHIL.value))))
 const auth = useAuthStore()
 const route = useRoute()
 const puedeCorregir = computed(() => auth.rol === 'Administrador' || auth.rol === 'Operador')
+const puedeRevisarCobertura = computed(() => auth.rol === 'Administrador' || auth.rol === 'Auditor')
+interface Cobertura {
+  continuidad: { orden: string; cierre_disponible: { lote_id: number; pagina: number; fecha_ocr: string; saldo_documental: number } | null; interrupciones_entre_lotes: { lote_anterior: number; lote_siguiente: number; saldo_esperado: number; saldo_documento: number }[] }
+  evidencia_disponible: {
+    lotes: { lote_id: number; tanda: number; paginas_declaradas: number; paginas_con_filas: number; movimientos: number }[]
+    gestiones_con_filas: { gestion: number; movimientos: number }[]
+    paginas_con_filas: number
+    movimientos: number
+  }
+  revision: { estado: string; observacion: string; referencia: string | null; vigente: boolean; revisado_en: string | null }
+  tramos: { id: number; gestion_desde: number; gestion_hasta: number; estado: string; paginas_faltantes: number | null; descripcion: string; referencia: string }[]
+}
+const cobertura = ref<Cobertura | null>(null)
+const revisionCobertura = ref({ estado: 'SIN_CONFIRMAR', referencia: '', observacion: '' })
+const tramoCobertura = ref({ gestion_desde: new Date().getFullYear(), gestion_hasta: new Date().getFullYear(), estado: 'PENDIENTE', paginas_faltantes: '', descripcion: '', referencia: '' })
+const guardandoCobertura = ref(false)
+async function cargarCobertura() {
+  if (!articuloSeleccionado.value) return
+  try {
+    cobertura.value = (await api.get(`/kardex/cobertura/${articuloSeleccionado.value.id}`)).data
+    const r = cobertura.value?.revision
+    if (r) revisionCobertura.value = { estado: r.estado, referencia: r.referencia ?? '', observacion: r.observacion === 'La cobertura todavía no ha sido revisada.' ? '' : r.observacion }
+  } catch { errorMsg.value = 'No se pudo consultar la cobertura documental.' }
+}
+async function guardarRevisionCobertura() {
+  if (!articuloSeleccionado.value) return
+  guardandoCobertura.value = true
+  try {
+    await api.put(`/kardex/cobertura/${articuloSeleccionado.value.id}/revision`, revisionCobertura.value)
+    await cargarCobertura()
+    mensajeExito.value = 'Revisión de cobertura registrada.'
+  } catch (err: any) { errorMsg.value = err.response?.data?.detail ?? 'No se pudo registrar la revisión.' }
+  finally { guardandoCobertura.value = false }
+}
+async function guardarTramoCobertura() {
+  if (!articuloSeleccionado.value) return
+  guardandoCobertura.value = true
+  try {
+    await api.post(`/kardex/cobertura/${articuloSeleccionado.value.id}/tramos`, {
+      ...tramoCobertura.value,
+      paginas_faltantes: tramoCobertura.value.paginas_faltantes === '' ? null : Number(tramoCobertura.value.paginas_faltantes),
+    })
+    await cargarCobertura()
+    tramoCobertura.value.descripcion = ''
+    mensajeExito.value = 'Tramo documental registrado.'
+  } catch (err: any) { errorMsg.value = err.response?.data?.detail ?? 'No se pudo registrar el tramo.' }
+  finally { guardandoCobertura.value = false }
+}
 const limitesCarga = ref({ paginas: 20, mb_imagen: 20, mb_lote: 100 })
 const imagenAuditoria = ref<string | null>(null)
 const urlImagenAuditoria = computed(() => imagenAuditoria.value
@@ -111,13 +197,15 @@ const urlImagenAuditoria = computed(() => imagenAuditoria.value
 
 // Computed
 const articulosFiltrados = computed(() => {
-  if (!buscarTexto.value) return articulos.value
   const t = buscarTexto.value.toLowerCase()
-  return articulos.value.filter(a => a.nombre.toLowerCase().includes(t) || a.codigo.toLowerCase().includes(t))
+  return articulos.value.filter(a => (a.nombre.toLowerCase().includes(t) || a.codigo.toLowerCase().includes(t))
+    && (filtroObservacion.value === 'todos' || Boolean(a.observacion_hil?.observado) === (filtroObservacion.value === 'observados')))
 })
 
 onMounted(async () => {
-  await cargarArticulos()
+  await Promise.all([cargarArticulos(), cargarTandas()])
+  const tandaRuta = Number(route.query.tanda)
+  if (resumenTandas.value.some(t => t.id === tandaRuta)) tandaSeleccionada.value = tandaRuta
   const destino = articulos.value.find(a => a.id === Number(route.query.articulo_id))
   if (destino) {
     seleccionarArticulo(destino, route.query.tab === 'hil' ? 'hil' : 'historial')
@@ -168,6 +256,7 @@ function irASubirLote() {
   vistaActual.value = 'subir_lote'
   mensajeExito.value = ''
   errorMsg.value = ''
+  cargarSolicitudes()
 }
 
 async function guardarNuevoArticulo() {
@@ -219,10 +308,11 @@ async function cargarErroresHIL() {
   }
 }
 
-function cambiarPestaña(tab: 'historial' | 'hil' | 'grafo') {
+function cambiarPestaña(tab: 'historial' | 'hil' | 'grafo' | 'cobertura') {
   subPestaña.value = tab
   if (tab === 'historial') cargarHistorial()
   if (tab === 'hil') cargarErroresHIL()
+  if (tab === 'cobertura') cargarCobertura()
 }
 
 // Logica subida de lote
@@ -279,6 +369,7 @@ async function subirLote() {
   if (subiendo.value || lotePendiente.value) return
   if (!articuloSeleccionado.value) return
   if (archivos.value.length === 0) return errorMsg.value = "Selecciona al menos una imagen."
+  if (!tandaActual.value) return errorMsg.value = "Consulta la tanda actual antes de cargar fotografías."
   if (!ordenConfirmado.value) return errorMsg.value = "Confirma el orden físico de las páginas antes de procesarlas."
   
   subiendo.value = true
@@ -287,6 +378,7 @@ async function subirLote() {
   errorMsg.value = ''; mensajeExito.value = ''
   
   const formData = new FormData()
+  formData.append('tanda', String(tandaActual.value))
   formData.append('articulo_id', articuloSeleccionado.value.id.toString())
   archivos.value.forEach(item => formData.append('archivos', item.archivo, item.archivo.name))
 
@@ -299,8 +391,10 @@ async function subirLote() {
     }
     mensajeExito.value = respuesta.data.duplicado
       ? "Estas páginas ya estaban guardadas. Abajo se muestran sus movimientos; no se agregó ningún duplicado."
-      : "Lote escaneado exitosamente."
+      : `Lote escaneado exitosamente en Tanda ${respuesta.data.tanda}.`
+    tandaSeleccionada.value = respuesta.data.tanda ?? tandaActual.value
     loteSeleccionado.value = respuesta.data.lote_id ?? null
+    await cargarTandas()
     limpiarArchivos()
     vistaActual.value = 'historial'
     cambiarPestaña('historial')
@@ -319,6 +413,7 @@ async function subirLote() {
     if (relojCarga) clearInterval(relojCarga)
     relojCarga = undefined
     subiendo.value = false
+    await cargarSolicitudes()
   }
 }
 
@@ -328,13 +423,15 @@ async function decidirLote(confirmar: boolean) {
   subiendo.value = true
   errorMsg.value = ''
   try {
-    await api.post(`/kardex/lotes-pendientes/${lotePendiente.value.pendiente_id}/decision`, { confirmar })
+    const respuesta = await api.post(`/kardex/lotes-pendientes/${lotePendiente.value.pendiente_id}/decision`, { confirmar })
     lotePendiente.value = null
     if (confirmar) {
+      tandaSeleccionada.value = respuesta.data.tanda ?? tandaActual.value
+      await cargarTandas()
       limpiarArchivos()
       vistaActual.value = 'historial'
       cambiarPestaña('historial')
-      mensajeExito.value = 'Lote guardado con tu autorización de las diferencias de título.'
+      mensajeExito.value = `Lote guardado en Tanda ${respuesta.data.tanda} con tu autorización de las diferencias de título.`
     } else {
       ordenConfirmado.value = false
       mensajeExito.value = 'Lote cancelado. Revisa las fotografías antes de volver a procesar.'
@@ -370,7 +467,7 @@ function verFoto(ruta: string | null) {
     <div v-if="lotePendiente" class="confirmacion-fondo">
       <section role="dialog" aria-modal="true" aria-labelledby="titulo-confirmacion" class="confirmacion-dialogo">
         <h2 id="titulo-confirmacion">Revisa los títulos antes de guardar</h2>
-        <p>Artículo seleccionado: <strong>{{ lotePendiente.articulo_nombre }}</strong></p>
+        <p>Artículo seleccionado: <strong>{{ lotePendiente.articulo_nombre }}</strong> · Tanda {{ lotePendiente.tanda }}</p>
         <p>Estas páginas tienen encabezados diferentes. Comprueba si son variantes del mismo artículo.</p>
         <ul>
           <li v-for="diferencia in lotePendiente.diferencias" :key="diferencia.pagina">
@@ -389,8 +486,9 @@ function verFoto(ruta: string | null) {
       
       <h1>Kárdex Digital Continuo</h1>
       <div style="flex-grow:1"></div>
+      <router-link v-if="vistaActual === 'buscar'" to="/kardex/muestra-validacion" class="btn-outline">Validar muestra migrada</router-link>
       
-      <button v-if="vistaActual === 'buscar'" class="btn-primary" @click="irACrearArticulo">
+      <button v-if="vistaActual === 'buscar' && puedeCorregir" class="btn-primary" @click="irACrearArticulo">
         + Nuevo Artículo
       </button>
     </div>
@@ -398,9 +496,20 @@ function verFoto(ruta: string | null) {
     <p v-if="errorMsg" class="alert alert-error">{{ errorMsg }}</p>
     <p v-if="mensajeExito" class="alert alert-success">{{ mensajeExito }}</p>
 
+    <section v-if="vistaActual === 'buscar' || vistaActual === 'historial'" class="tandas-panel" aria-label="Tandas de digitalización">
+      <strong>Archivo escaneado por tandas</strong>
+      <p>Las nuevas fotografías se guardan en <strong>Tanda {{ tandaActual ?? 'por consultar' }}</strong>. El filtro muestra el historial y la revisión HIL del artículo seleccionado.</p>
+      <div class="tandas-controles" role="group" aria-label="Filtrar tanda">
+        <button :class="['tab-btn', { active: tandaSeleccionada === null }]" :aria-pressed="tandaSeleccionada === null" @click="tandaSeleccionada = null">Todas las tandas</button>
+        <button v-for="t in resumenTandas" :key="t.id" :class="['tab-btn', { active: tandaSeleccionada === t.id }]" :aria-pressed="tandaSeleccionada === t.id" @click="tandaSeleccionada = t.id">{{ t.nombre }} · {{ t.movimientos }} movimientos</button>
+      </div>
+      <small>Los conteos abarcan todo el archivo. El catálogo de artículos es compartido.</small>
+    </section>
+
     <!-- PANTALLA 1: BUSCADOR -->
     <div v-if="vistaActual === 'buscar'" class="pantalla-buscar">
       <BuscadorArticulos v-model="buscarTexto" placeholder="Buscar artículos escaneados por nombre o código…" />
+      <label>Estado documental <select v-model="filtroObservacion"><option value="todos">Todos</option><option value="sin_observacion">Sin observación especial</option><option value="observados">Observados</option></select></label>
 
       <div class="lista-articulos">
         <div v-for="art in articulosFiltrados" :key="art.id" class="articulo-card" @click="seleccionarArticulo(art)">
@@ -409,10 +518,11 @@ function verFoto(ruta: string | null) {
             <div class="art-badges">
               <span v-if="art.alertas_rojas > 0" class="badge-alert red" title="Errores Matemáticos">🔴 {{ art.alertas_rojas }}</span>
               <span v-if="art.alertas_amarillas > 0" class="badge-alert yellow" title="Clasificaciones Dudosas">🟡 {{ art.alertas_amarillas }}</span>
-              <span v-if="art.alertas_rojas === 0 && art.alertas_amarillas === 0" class="badge-alert green" title="Kárdex Sano">✅ Al día</span>
+              <span v-if="art.alertas_rojas === 0 && art.alertas_amarillas === 0 && !art.observacion_hil?.observado" class="badge-alert green" title="Sin avisos pendientes">Sin avisos</span>
             </div>
           </div>
           <div class="art-nombre">{{ art.nombre }}</div>
+          <small v-if="art.observacion_hil?.observado">Observado<span v-if="art.observacion_hil.excluir_entrenamiento"> · fuera del entrenamiento histórico</span></small>
         </div>
         <div v-if="articulosFiltrados.length === 0" class="empty-state">No se encontraron artículos que coincidan.</div>
       </div>
@@ -441,7 +551,17 @@ function verFoto(ruta: string | null) {
         <span class="value">[{{ articuloSeleccionado.codigo }}] {{ articuloSeleccionado.nombre }}</span>
       </div>
       <div class="upload-area">
-        <h3>Subir Fotografías del Kárdex</h3>
+        <h3>Subir Fotografías del Kárdex · Tanda {{ tandaActual ?? 'por consultar' }}</h3>
+        <p>Esta carga se identificará como Tanda {{ tandaActual ?? 'por consultar' }}. Una fotografía ya guardada conserva su tanda original.</p>
+        <section aria-label="Estado de cargas recientes">
+          <button class="btn-outline btn-small" type="button" @click="cargarSolicitudes">Actualizar estado de cargas</button>
+          <p v-for="solicitud in solicitudesCarga.slice(0, 5)" :key="solicitud.id">
+            Solicitud {{ solicitud.id }} · {{ solicitud.estado }} · intento {{ solicitud.intento }}
+            <span v-if="solicitud.lote_id"> · lote {{ solicitud.lote_id }} guardado</span>
+            <span v-else-if="solicitud.reintentable"> · puedes seleccionar y enviar las mismas fotos para reanudar sin duplicar el lote</span>
+            <span v-else-if="solicitud.estado === 'PROCESANDO'"> · espera; no envíes de nuevo mientras procesa</span>
+          </p>
+        </section>
         <div class="upload-controls">
           <input type="file" multiple accept="image/jpeg,image/png,image/webp" @change="handleFileChange" class="file-input" :disabled="subiendo"/>
           <button class="btn-primary" @click="subirLote" :disabled="subiendo || archivos.length === 0 || !ordenConfirmado">
@@ -489,7 +609,7 @@ function verFoto(ruta: string | null) {
           <span class="label">Activo:</span>
           <span class="value">[{{ articuloSeleccionado.codigo }}] {{ articuloSeleccionado.nombre }}</span>
         </div>
-        <button class="btn-outline btn-small" @click="irASubirLote">+ Escanear más páginas</button>
+        <button v-if="puedeCorregir" class="btn-outline btn-small" @click="irASubirLote">+ Escanear más páginas · Tanda {{ tandaActual ?? 'por consultar' }}</button>
       </div>
       
       <!-- TABS -->
@@ -504,7 +624,10 @@ function verFoto(ruta: string | null) {
           </span>
         </button>
         <button :class="['tab-btn', { active: subPestaña === 'grafo' }]" @click="cambiarPestaña('grafo')">
-          <i class="pi pi-share-alt"></i> Grafo de Flujo
+          <i class="pi pi-share-alt"></i> Trazabilidad
+        </button>
+        <button :class="['tab-btn', { active: subPestaña === 'cobertura' }]" @click="cambiarPestaña('cobertura')">
+          <i class="pi pi-folder"></i> Cobertura documental
         </button>
       </div>
 
@@ -512,8 +635,8 @@ function verFoto(ruta: string | null) {
       
       <!-- TAB 1: HISTORIAL -->
       <div v-else-if="subPestaña === 'historial'">
-        <p v-if="movimientos.length > 0" class="ref">
-          {{ movimientos.length }} movimientos en {{ lotesVisibles.length }} escaneos.
+        <p v-if="movimientosTanda.length > 0" class="ref">
+          {{ movimientosTanda.length }} movimientos en {{ lotesVisibles.length }} escaneos · {{ tandaSeleccionada === null ? 'Todas las tandas' : `Tanda ${tandaSeleccionada}` }}.
           Cada escaneo individual comienza en la página 1.
         </p>
         <div v-if="lotesVisibles.length > 1" class="tabs-container">
@@ -521,10 +644,10 @@ function verFoto(ruta: string | null) {
           <button v-for="id in lotesVisibles" :key="id"
             :class="['tab-btn', { active: loteSeleccionado === id }]"
             @click="loteSeleccionado = id">
-            Escaneo {{ numeroEscaneo(id) }} ({{ movimientos.filter(m => m.lote_id === id).length }})
+            Escaneo {{ numeroEscaneo(id) }} ({{ movimientosTanda.filter(m => m.lote_id === id).length }})
           </button>
         </div>
-        <table v-if="movimientosMostrados.length > 0" class="tabla-kardex">
+        <div v-if="movimientosMostrados.length > 0" class="tabla-scroll"><table class="tabla-kardex">
           <thead>
             <tr>
               <th>Escaneo</th><th>Fecha</th><th>Detalle / Ref</th><th>Ingreso</th><th>Salida</th><th>Saldo</th><th>Nodo Clasificado</th><th>Auditoría</th>
@@ -532,11 +655,12 @@ function verFoto(ruta: string | null) {
           </thead>
           <tbody>
             <tr v-for="mov in movimientosMostrados" :key="mov.id" :class="{'fila-error': mov.tiene_error_saldo, 'fila-dudosa': mov.requiere_auditoria_nodo || mov.requiere_auditoria_referencia}">
-              <td>Escaneo {{ numeroEscaneo(mov.lote_id) }}<br/><small>Hoja {{ mov.numero_pagina }}</small></td>
+              <td><strong>Tanda {{ mov.tanda }}</strong><br/>Escaneo {{ numeroEscaneo(mov.lote_id) }}<br/><small>Foto {{ mov.numero_pagina }}<span v-if="mov.orden_pagina_validado"> · orden validado {{ mov.orden_pagina_validado }}</span></small></td>
               <td>{{ mov.fecha_movimiento }}<small v-if="mov.tiene_error_fecha" class="fecha-hallazgo">{{ mov.fecha_estado === 'PENDIENTE_HIL' ? 'Fecha por revisar' : 'Fecha revisada: hallazgo conservado' }}</small></td>
               <td>
                 <strong>{{ mov.detalle }}</strong><br/>
                 <span class="ref">Ref: {{ mov.referencia || '-' }} | Área: {{ mov.area || '-' }}</span>
+                <MarcaDocumental :revision="mov.revision_documental" :tratamiento="mov.tratamiento_hil" />
               </td>
               <td>{{ mov.ingresos !== null ? mov.ingresos : '-' }}</td>
               <td>{{ mov.salidas !== null ? mov.salidas : '-' }}</td>
@@ -550,32 +674,41 @@ function verFoto(ruta: string | null) {
               </td>
             </tr>
           </tbody>
-        </table>
-        <div v-else class="empty-state">No hay registros. <button class="btn-primary" @click="irASubirLote">Comenzar a escanear</button></div>
+        </table></div>
+        <div v-else class="empty-state">No hay registros para la tanda seleccionada. <button v-if="puedeCorregir" class="btn-primary" @click="irASubirLote">Escanear en Tanda {{ tandaActual ?? 'por consultar' }}</button></div>
       </div>
 
       <!-- TAB 2: AUDITORÍA HIL -->
       <div v-else-if="subPestaña === 'hil'">
-        <div class="hil-filtros"><label>Tipo de revisión <select v-model="tipoHIL"><option value="">Todas</option><option value="saldo">Saldo</option><option value="fecha">Fecha</option><option value="area">Área / nodo</option><option value="referencia">Referencia</option></select></label><span>{{ erroresFiltrados.length }} filas pendientes. Una fila puede tener varias alertas.</span></div>
+        <p>{{ categorizadosHIL }} categorizados con marca · {{ erroresPorTanda.length - categorizadosHIL }} por categorizar o actualizar.</p>
+        <p>Un aviso ya tratado puede conservar una diferencia del documento, una hipótesis o un dato sin confirmar. Abre la revisión documental para ver la decisión y su evidencia.</p>
+        <div class="hil-filtros">
+          <label>Tipo de revisión <select v-model="tipoHIL"><option value="">Todas</option><option value="saldo">Saldo</option><option value="fecha">Fecha</option><option value="area">Área / nodo</option><option value="referencia">Referencia</option></select></label>
+          <label>Tratamiento <select v-model="estadoTratamientoHIL"><option value="">Todos</option><option value="CATEGORIZADO_CON_MARCA">Categorizados con marca</option><option value="POR_CATEGORIZAR">Por categorizar</option><option value="REQUIERE_RECATEGORIZAR">Revisar categoría tras cambios</option></select></label>
+          <label>Categoría <select v-model="categoriaHIL"><option value="">Todas</option><option v-for="(etiqueta, valor) in categoriasHil" :key="valor" :value="valor">{{ etiqueta }}</option></select></label>
+          <span>{{ erroresFiltrados.length }} filas con avisos visibles. Una fila puede tener varias marcas.</span>
+        </div>
         <p v-if="cargandoHistorial">Cargando revisiones…</p>
         <div v-else-if="erroresFiltrados.length === 0" class="empty-state">
           <h3>Sin alertas pendientes para este filtro</h3>
           <p>Esto no equivale a una certificación humana integral del artículo.</p>
         </div>
-        <table v-else class="tabla-kardex tabla-errores">
+        <div v-else class="tabla-scroll"><table class="tabla-kardex tabla-errores">
           <thead>
             <tr>
-              <th>Alerta</th><th>Fecha</th><th>Texto de consulta (original conservado)</th><th>Ing/Sal</th><th>Saldo</th><th>Nodo Grafo Asignado</th><th>Acción HIL</th>
+              <th>Alerta / tratamiento</th><th>Fecha</th><th>Texto de consulta (original conservado)</th><th>Ing/Sal</th><th>Saldo</th><th>Nodo Grafo Asignado</th><th>Acción HIL</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="err in erroresFiltrados" :key="err.id">
               <td style="font-size: 1.2rem; text-align: center;">
                 <span v-for="tipo in err.tipos_alerta" :key="tipo" class="alerta-tipo">{{ tipo }}</span>
+                <small class="fecha-hallazgo">{{ err.tratamiento_hil?.etiqueta ?? 'Por categorizar' }}</small>
               </td>
-              <td>{{ err.fecha_movimiento }}<small class="fecha-hallazgo">{{ err.fecha_estado }}</small><small v-if="err.fecha_original !== err.fecha_movimiento">Original: {{ err.fecha_original }}</small></td>
+              <td><strong>Tanda {{ err.tanda }}</strong><br/>{{ err.fecha_movimiento }}<small class="fecha-hallazgo">{{ err.fecha_estado }}</small><small v-if="err.fecha_original !== err.fecha_movimiento">Original: {{ err.fecha_original }}</small></td>
               <td class="detalle-col">
                 <strong>Detalle:</strong> {{ err.detalle || '-' }} <br/>
+                <MarcaDocumental :revision="err.revision_documental" :tratamiento="err.tratamiento_hil" />
                 <strong>Ref:</strong> {{ err.referencia || '-' }} ({{ err.referencia_estado }}) |
                 <strong>Área:</strong> {{ err.area || '-' }} ({{ err.area_estado }})
               </td>
@@ -589,12 +722,75 @@ function verFoto(ruta: string | null) {
                 <td><button v-if="puedeCorregir" class="btn-outline btn-small" @click="iniciarEdicionHIL(err)">Revisar evidencia</button><button v-else class="btn-outline btn-small" @click="verFoto(err.ruta_imagen_respaldo)">Ver evidencia</button></td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       <!-- TAB 3: GRAFO VISUAL -->
+      <div v-else-if="subPestaña === 'cobertura'" class="form-container">
+        <h3>Cobertura documental</h3>
+        <ObservacionHilArticulo v-if="articuloSeleccionado" :key="articuloSeleccionado.id" :articulo-id="articuloSeleccionado.id" :estado="articuloSeleccionado.observacion_hil" :editable="puedeRevisarCobertura" @guardado="estado => { if (articuloSeleccionado) articuloSeleccionado.observacion_hil = estado }" />
+        <p>Las páginas y gestiones observadas muestran lo que se digitalizó. No prueban que el archivo del artículo esté completo.</p>
+        <div v-if="cobertura">
+          <p><strong>Disponible:</strong> {{ cobertura.evidencia_disponible.paginas_con_filas }} páginas con filas,
+            {{ cobertura.evidencia_disponible.movimientos }} movimientos, en
+            {{ cobertura.evidencia_disponible.lotes.length }} escaneos.</p>
+          <p><strong>Gestiones observadas:</strong>
+            {{ cobertura.evidencia_disponible.gestiones_con_filas.map(g => g.gestion).join(', ') || 'ninguna' }}.
+          </p>
+          <p v-if="cobertura.continuidad.cierre_disponible"><strong>Último saldo escaneado:</strong>
+            {{ cobertura.continuidad.cierre_disponible.saldo_documental }} · lote
+            {{ cobertura.continuidad.cierre_disponible.lote_id }}, hoja
+            {{ cobertura.continuidad.cierre_disponible.pagina }}. Es una base documental, no un conteo físico.</p>
+          <p v-if="cobertura.continuidad.interrupciones_entre_lotes.length" role="alert">
+            Hay {{ cobertura.continuidad.interrupciones_entre_lotes.length }} interrupción(es) de saldo entre escaneos; revisa las fotos antes de confirmar el cierre.
+          </p>
+          <ul v-if="cobertura.continuidad.interrupciones_entre_lotes.length">
+            <li v-for="corte in cobertura.continuidad.interrupciones_entre_lotes" :key="`${corte.lote_anterior}-${corte.lote_siguiente}`">
+              Lotes {{ corte.lote_anterior }} → {{ corte.lote_siguiente }}: se esperaba
+              {{ corte.saldo_esperado }} y el documento indica {{ corte.saldo_documento }}.
+            </li>
+          </ul>
+          <p><strong>Revisión:</strong> {{ cobertura.revision.estado }}
+            <span v-if="!cobertura.revision.vigente && cobertura.revision.revisado_en"> · desactualizada por escaneos posteriores</span>
+            <span v-if="!cobertura.revision.revisado_en"> · aún sin revisión humana</span>
+          </p>
+          <p v-if="cobertura.revision.referencia">{{ cobertura.revision.observacion }} · Ref: {{ cobertura.revision.referencia }}</p>
+          <h4>Periodos declarados</h4>
+          <ul v-if="cobertura.tramos.length">
+            <li v-for="tramo in cobertura.tramos" :key="tramo.id">
+              {{ tramo.gestion_desde }}–{{ tramo.gestion_hasta }} · {{ tramo.estado }}
+              <span v-if="tramo.paginas_faltantes !== null"> · {{ tramo.paginas_faltantes }} páginas faltantes</span>
+              · {{ tramo.descripcion }} · Ref: {{ tramo.referencia }}
+            </li>
+          </ul>
+          <p v-else>No hay periodos faltantes o confirmados declarados todavía.</p>
+          <template v-if="puedeRevisarCobertura">
+            <h4>Registrar revisión del artículo</h4>
+            <div class="form-group"><label>Estado</label>
+              <select v-model="revisionCobertura.estado">
+                <option value="SIN_CONFIRMAR">Sin confirmar</option>
+                <option value="PARCIAL">Parcial</option>
+                <option value="CIERRE_CONFIRMADO">Último cierre documental confirmado</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Referencia de revisión</label><input v-model="revisionCobertura.referencia" placeholder="Acta, carpeta o documento" /></div>
+            <div class="form-group"><label>Observación</label><textarea v-model="revisionCobertura.observacion" placeholder="Qué se revisó y qué queda pendiente" /></div>
+            <button class="btn-primary" :disabled="guardandoCobertura" @click="guardarRevisionCobertura">Guardar revisión</button>
+            <h4>Registrar periodo pendiente o revisado</h4>
+            <div class="form-group"><label>Gestión desde</label><input v-model.number="tramoCobertura.gestion_desde" type="number" min="1900" max="2100" /></div>
+            <div class="form-group"><label>Gestión hasta</label><input v-model.number="tramoCobertura.gestion_hasta" type="number" min="1900" max="2100" /></div>
+            <div class="form-group"><label>Estado</label><select v-model="tramoCobertura.estado">
+              <option value="PENDIENTE">Pendiente</option><option value="SIN_CONFIRMAR">Sin confirmar</option><option value="CONFIRMADO">Confirmado</option>
+            </select></div>
+            <div class="form-group"><label>Páginas faltantes (si se conocen)</label><input v-model="tramoCobertura.paginas_faltantes" type="number" min="0" /></div>
+            <div class="form-group"><label>Detalle</label><textarea v-model="tramoCobertura.descripcion" placeholder="Hojas o periodo que faltan o que se verificaron" /></div>
+            <div class="form-group"><label>Referencia</label><input v-model="tramoCobertura.referencia" placeholder="Acta, carpeta o documento" /></div>
+            <button class="btn-primary" :disabled="guardandoCobertura" @click="guardarTramoCobertura">Registrar periodo</button>
+          </template>
+        </div>
+      </div>
       <div v-else-if="subPestaña === 'grafo'">
-        <GrafoFlujoArticulo :key="articuloSeleccionado.id" :articulo-id="articuloSeleccionado.id" :nombre="articuloSeleccionado.nombre" />
+        <TrazabilidadArticulo :key="articuloSeleccionado.id" :articulo-id="articuloSeleccionado.id" ambito-inicial="HISTORICO" />
       </div>
     </div>
 
@@ -705,4 +901,16 @@ function verFoto(ruta: string | null) {
 .alert { padding: 1rem; border-radius: 6px; margin-bottom: 1.5rem; }
 .alert-error { background-color: #fdf2f2; color: #991b1b; }
 .alert-success { background-color: #ecfdf5; color: #065f46; }
+.tandas-panel { margin-bottom: 1.5rem; padding: 1rem; border: 1px solid var(--border-color); border-radius: var(--radius); }
+.tandas-panel p { margin: .5rem 0; }
+.tandas-controles { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0; }
+.tandas-controles .tab-btn { border: 1px solid var(--border-color); border-radius: 6px; }
+.tabla-scroll { max-width: 100%; overflow-x: auto; }
+.tandas-controles .tab-btn[aria-pressed="true"] { background: #e8f0fc; outline: 2px solid #2563eb; outline-offset: -2px; }
+@media (max-width: 640px) {
+  .kardex-continuo-view { min-width: 0; }
+  .lista-articulos { grid-template-columns: minmax(0, 1fr); }
+  .tabs { flex-wrap: wrap; }
+  .context-header.with-action { flex-direction: column; align-items: flex-start; gap: .75rem; }
+}
 </style>

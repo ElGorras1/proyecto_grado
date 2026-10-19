@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import String, Text, ForeignKey, Numeric, Date
+from sqlalchemy import JSON, String, Text, ForeignKey, Numeric, Date, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -28,10 +28,15 @@ class Activo(Base):
     estado: Mapped[str] = mapped_column(String(20), default="activo")
     fecha_alta: Mapped[date | None] = mapped_column(Date)
     fecha_baja: Mapped[date | None] = mapped_column(Date)
+    observacion_hil: Mapped[dict | None] = mapped_column(JSON)
 
 
 class Existencia(Base):
     __tablename__ = "existencia"
+    __table_args__ = (
+        UniqueConstraint("activo_id", "area_id", name="uq_existencia_activo_area"),
+        CheckConstraint("cantidad >= 0", name="ck_existencia_cantidad"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     activo_id: Mapped[int] = mapped_column(ForeignKey("activo.id"), nullable=False)

@@ -5,6 +5,30 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
+      path: '/gestion-institucional',
+      name: 'gestionInstitucional',
+      component: () => import('@/views/GestionInstitucionalView.vue'),
+      meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
+    },
+    {
+      path: '/analitica-operativa',
+      name: 'analiticaOperativa',
+      component: () => import('@/views/AnaliticaOperativaView.vue'),
+      meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
+    },
+    {
+      path: '/alertas-inventario',
+      name: 'alertasInventario',
+      component: () => import('@/views/AlertasInventarioView.vue'),
+      meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
+    },
+    {
+      path: '/analitica',
+      name: 'analitica',
+      component: () => import('@/views/AnaliticaView.vue'),
+      meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
@@ -44,6 +68,12 @@ const router = createRouter({
       path: '/kardex-digital',
       name: 'kardexDigital',
       component: () => import('@/views/KardexContinuoView.vue'),
+      meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
+    },
+    {
+      path: '/kardex/muestra-validacion',
+      name: 'muestraValidacion',
+      component: () => import('@/views/MuestraHilView.vue'),
       meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
     },
     {
@@ -90,7 +120,7 @@ router.beforeEach(async (to) => {
   }
 
   const rolesPermitidos = to.meta.roles as string[] | undefined
-  if (rolesPermitidos && auth.rol && !rolesPermitidos.includes(auth.rol)) {
+  if (rolesPermitidos && (!auth.rol || !rolesPermitidos.includes(auth.rol))) {
     return { name: 'forbidden' }
   }
 

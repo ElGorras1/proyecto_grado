@@ -55,6 +55,7 @@ def _consulta(db, gestion, mes, articulo, origen, direccion, nodo, revision):
 
 
 def _fila(mov, activo):
+    rev = mov.revision_documental or {}
     return {
         "id": mov.id,
         "fecha": mov.fecha_movimiento.isoformat(),
@@ -75,6 +76,12 @@ def _fila(mov, activo):
         "ingresos": mov.ingresos or 0,
         "salidas": mov.salidas or 0,
         "pendiente_hil": bool(tipos_alerta(mov)),
+        "origen_fecha": rev.get("origen_fecha", "SIN_REVISION_DOCUMENTAL"),
+        "origen_saldo": rev.get("origen_saldo", "SIN_REVISION_DOCUMENTAL"),
+        "saldo_documental": rev.get("saldo_documental"),
+        "saldo_vigente": mov.saldo_registrado,
+        "saldo_esperado": mov.saldo_calculado,
+        "hallazgos_documentales": ", ".join(rev.get("hallazgos", [])),
     }
 
 
@@ -190,6 +197,7 @@ def exportar_inventario(
             "ID", "Fecha para consulta", "Fecha original", "Estado fecha", "Código", "Artículo", "Origen", "Lote",
             "Página", "Fila", "Detalle", "Referencia", "Área original", "Nodo",
             "Tipo de operación", "Ingresos", "Salidas", "Pendiente HIL",
+            "Origen fecha", "Origen saldo", "Saldo documental cotejado", "Saldo vigente", "Saldo esperado", "Hallazgos conservados",
         ])
         yield buffer.getvalue()
         buffer.seek(0)
@@ -200,6 +208,7 @@ def exportar_inventario(
                 "id", "fecha", "fecha_original", "fecha_estado", "codigo", "articulo", "origen", "lote_id",
                 "pagina", "orden_fila", "detalle", "referencia", "area_original", "nodo",
                 "tipo_operacion", "ingresos", "salidas", "pendiente_hil",
+                "origen_fecha", "origen_saldo", "saldo_documental", "saldo_vigente", "saldo_esperado", "hallazgos_documentales",
             )])
             yield buffer.getvalue()
             buffer.seek(0)

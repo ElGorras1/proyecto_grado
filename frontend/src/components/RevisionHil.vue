@@ -14,7 +14,7 @@ const emit = defineEmits<{ guardar: []; cerrar: [] }>()
 const m = props.movimiento
 const form = ref({ ingresos: m.ingresos, salidas: m.salidas, saldo_registrado: m.saldo_registrado,
   nodo_grafo: m.nodo_grafo, referencia: m.referencia, referencia_estado: m.referencia_estado,
-  fecha_movimiento: m.fecha_movimiento, decision_fecha: '', motivo: '' })
+  fecha_movimiento: m.fecha_movimiento, decision_fecha: '', origen_fecha: 'FOTO', motivo: '' })
 const guardando = ref(false)
 const error = ref('')
 const revisiones = ref<{ id: number; fecha: string; usuario: string; detalle: { motivo?: string; previo?: unknown; nuevo?: unknown } }[]>([])
@@ -34,12 +34,12 @@ async function guardar() {
   if (guardando.value) return
   if (!form.value.motivo.trim()) { error.value = 'Describe qué comprobaste en la evidencia y el motivo de la decisión.'; return }
   guardando.value = true; error.value = ''
-  const { fecha_movimiento, decision_fecha, ...datos } = form.value
+  const { fecha_movimiento, decision_fecha, origen_fecha, ...datos } = form.value
   try {
     await api.put(`/kardex/movimiento/${m.id}`, { ...datos,
       ingresos: datos.ingresos || null, salidas: datos.salidas || null,
       ...(decision_fecha ? { decision_fecha } : {}),
-      ...(decision_fecha === 'corregir' ? { fecha_movimiento } : {}),
+      ...(decision_fecha === 'corregir' ? { fecha_movimiento, origen_fecha } : {}),
     })
     emit('guardar')
   } catch (e: any) {
@@ -70,9 +70,11 @@ onBeforeUnmount(() => { if (focoAnterior?.isConnected) focoAnterior.focus() })
           <fieldset><legend>Fecha · {{ m.fecha_estado }}</legend><p>Original: {{ m.fecha_original || m.fecha_movimiento }} · Actual: {{ m.fecha_movimiento }}</p>
             <label>Decisión<select v-model="form.decision_fecha"><option value="">Sin decisión sobre la fecha</option><option value="confirmar_documento">Confirmar: así está escrita en el documento</option><option value="corregir">Corregir fecha de consulta con evidencia</option></select></label>
             <label v-if="form.decision_fecha === 'corregir'">Fecha corregida<input v-model="form.fecha_movimiento" type="date" required /></label>
+            <label v-if="form.decision_fecha === 'corregir'">Origen de la fecha<select v-model="form.origen_fecha"><option value="FOTO">Legible en la fotografía</option><option value="HIPOTESIS">Estimada: no se recupera la fecha</option><option value="SECUENCIA_AJUSTADA">Ajustada para conservar la secuencia</option></select></label>
+            <small v-if="form.decision_fecha === 'corregir' && form.origen_fecha !== 'FOTO'">Se marcará como fecha estimada y quedará fuera del entrenamiento histórico; no acredita la fecha del hecho.</small>
             <small v-if="form.decision_fecha === 'confirmar_documento'">Se conserva la anomalía cronológica como hallazgo documentado, pero deja de estar pendiente de revisión.</small>
           </fieldset>
-          <fieldset><legend>Cantidades y saldo</legend><div class="numeros"><label>Ingreso<input v-model.number="form.ingresos" type="number" min="0" step="1" /></label><label>Salida<input v-model.number="form.salidas" type="number" min="0" step="1" /></label><label>Saldo escrito<input v-model.number="form.saldo_registrado" type="number" step="1" required /></label></div></fieldset>
+          <fieldset><legend>Cantidades y saldo</legend><div class="numeros"><label>Ingreso<input v-model.number="form.ingresos" type="number" min="0" step="1" /></label><label>Salida<input v-model.number="form.salidas" type="number" min="0" step="1" /></label><label>Saldo vigente<input v-model.number="form.saldo_registrado" type="number" step="1" required /></label></div></fieldset>
           <fieldset><legend>Área / nodo y referencia</legend>
             <label>Nodo clasificado<input v-model="form.nodo_grafo" list="nodos-hil" maxlength="100" /><datalist id="nodos-hil"><option v-for="n in nodos" :key="n.valor" :value="n.valor">{{ n.etiqueta }}</option></datalist></label>
             <small>Un área ausente no es una referencia ilegible. Mantén cada decisión independiente.</small>

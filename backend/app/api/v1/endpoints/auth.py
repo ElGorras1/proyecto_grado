@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -9,13 +9,14 @@ from app.core.security import create_access_token, verify_password
 from app.api.deps import get_current_user, require_roles
 from app.models.usuario import Usuario
 from app.core.rate_limit import limiter
+from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/5minutes")
-def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
+def login(request: Request, response: Response, payload: LoginRequest, db: Session = Depends(get_db)):
     # Buscar usuario y verificar contraseña por separado para poder
     # registrar en auditoría si el usuario existía o no.
     usuario = get_usuario_by_email(db, payload.email)
@@ -38,7 +39,8 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
             detail="Credenciales incorrectas",
         )
 
-    if usuario.estado != "activo":
+    if (usuario.estado != "activo" or usuario.rol is None or usuario.rol.estado != "activo"
+            or usuario.rol.nombre not in ("Administrador", "Operador", "Auditor")):
         # Login fallido: cuenta desactivada
         etiqueta = f"{usuario.rol.nombre}/{usuario.estado.capitalize()}" if usuario.rol else f"/{usuario.estado.capitalize()}"
         registrar_evento_auditoria(
@@ -94,11 +96,27 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
         subject=usuario.id,
         extra_claims={"rol": usuario.rol.nombre},
     )
+    cookie_evidencia(response, token)
     return TokenResponse(access_token=token)
 
 
+def cookie_evidencia(response: Response, token: str):
+    # Solo lectura de fotos. Los endpoints de negocio siguen exigiendo Bearer.
+    response.set_cookie("evidencia_sesion", token, httponly=True,
+                        secure=settings.ENVIRONMENT == "production", samesite="lax",
+                        path="/storage", max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+
+
+@router.post("/logout", status_code=204)
+def salir(response: Response):
+    response.delete_cookie("evidencia_sesion", path="/storage",
+                           secure=settings.ENVIRONMENT == "production", httponly=True,
+                           samesite="lax")
+
+
 @router.get("/me", response_model=UsuarioMe)
-def leer_usuario_actual(usuario: Usuario = Depends(get_current_user)):
+def leer_usuario_actual(request: Request, response: Response, usuario: Usuario = Depends(get_current_user)):
+    cookie_evidencia(response, request.headers["Authorization"].split(" ", 1)[1])
     return UsuarioMe(
         id=usuario.id,
         nombre=usuario.nombre,

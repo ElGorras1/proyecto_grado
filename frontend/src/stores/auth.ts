@@ -42,6 +42,7 @@ export const useAuthStore = defineStore('auth', {
     },
 
     logout() {
+      void api.post('/auth/logout').catch(() => {})
       this.token = null
       this.usuario = null
       sessionStorage.removeItem('access_token')

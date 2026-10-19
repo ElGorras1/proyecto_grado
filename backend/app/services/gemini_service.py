@@ -29,7 +29,9 @@ def get_genai_client() -> genai.Client:
     api_key = settings.GEMINI_API_KEY
     if not api_key:
         raise ValueError("GEMINI_API_KEY no configurada")
-    return genai.Client(api_key=api_key)
+    # El SDK interpreta este límite en milisegundos. Evita que una llamada
+    # colgada deje una solicitud de carga en PROCESANDO indefinidamente.
+    return genai.Client(api_key=api_key, http_options=genai.types.HttpOptions(timeout=120_000))
 
 def procesar_imagen_kardex(imagen_path: str) -> ExtraccionKardexHoja:
     """

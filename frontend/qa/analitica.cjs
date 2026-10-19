@@ -1,0 +1,40 @@
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const path = require('path');
+(async () => {
+  const browser = await chromium.launch({executablePath:process.env.BROWSER_EXECUTABLE || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+  const page = await browser.newPage({viewport:{width:1440,height:1000}});
+  const errors=[];
+  page.on('pageerror',e=>errors.push(e.message));
+  await page.addInitScript(()=>sessionStorage.setItem('access_token','qa-ficticio'));
+  const perfil={historicos_activos:200,elegibles:180,total:209,exclusiones:{pendientes_hil:20,modernos:9},por_articulo:{1:{nombre:'Catálogo de demostración con un título suficientemente largo para verificar el ancho',disponibles:200,elegibles:180}},por_gestion:{2021:{disponibles:120,elegibles:100},2022:{disponibles:80,elegibles:80}}};
+  const modelo={id:'qa-modelo',estado:'COMPLETADO',creado_en:'2026-10-06T12:00:00Z',perfil,datos_cambiaron:true,umbral:0.62,metricas:{particiones:{entrenamiento:110,calibracion:35,evaluacion:35},alertas:9,k:20,jaccard_top_entre_semillas:[.82,.90],solapamiento_top_regla:.25,sin_referencia_propia_evaluacion:10}};
+  const fila={id:1,articulo:'Artículo de demostración',codigo:'QA-001',fecha:'2021-06-15',fecha_estado:'SIN_ALERTA',lote_id:1,numero_pagina:1,orden_fila:1,detalle:'Salida documentada para revisión de interfaz',ingresos:null,salidas:50,nodo_grafo:'Biblioteca',ruta_imagen_respaldo:'storage/qa.svg'};
+  const resultado={id:1,movimiento_id:1,nodo:'Biblioteca',snapshot:fila,score:.74,alerta:true,particion:'evaluacion',estado_revision:'PENDIENTE',revision_numero:0,contexto:{mediana:5,referencias:40,indicadores:['Cantidad mayor a tres veces la mediana de referencia'],regla_magnitud:true}};
+  const p={k:20,revisados_concluyentes:0,precision_at_k:null};
+  await page.route('**/api/v1/**', async route=>{
+    const url=new URL(route.request().url()); let data;
+    if(url.pathname.endsWith('/auth/me')) data={id:1,nombre:'Cuenta de demostración',rol:'Administrador'};
+    else if(url.pathname.endsWith('/perfil')) data=perfil;
+    else if(url.pathname.endsWith('/modelos')) data={total:1,filas:[modelo]};
+    else if(url.pathname.endsWith('/evaluacion')) data={modelo:p,regla:p,control:p};
+    else if(url.pathname.endsWith('/modelos/qa-modelo')) data=modelo;
+    else if(url.pathname.endsWith('/resultados/1')) data={...resultado,datos_cambiaron:true,vecinos:[fila],revisiones:[]};
+    else if(url.pathname.endsWith('/resultados')) data={total:1,filas:[resultado]};
+    else throw Error('Ruta inesperada '+url.pathname);
+    await route.fulfill({json:data});
+  });
+  await page.route('**/storage/qa.svg',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#f3f1e8"/><text x="35" y="70" font-size="24">Evidencia ficticia para QA</text></svg>'}));
+  await page.goto('http://localhost:5173/analitica?gestion=2021');
+  await page.getByRole('button',{name:'Ver evidencia'}).waitFor();
+  await page.screenshot({path:path.join(__dirname,'analitica-escritorio.png'),fullPage:true});
+  await page.getByRole('button',{name:'Ver evidencia'}).click();
+  await page.getByRole('heading',{name:'Documentar revisión'}).waitFor();
+  await page.screenshot({path:path.join(__dirname,'analitica-detalle.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.screenshot({path:path.join(__dirname,'analitica-movil.png'),fullPage:true});
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth)) throw Error('Desborde horizontal');
+  if(errors.length) throw Error(errors.join('\n'));
+  console.log('QA escritorio/móvil/detalle: sin errores JS ni desborde horizontal. Datos ficticios.');
+  await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});
+

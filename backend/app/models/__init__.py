@@ -38,3 +38,14 @@ __all__ = [
     "SolicitudCargaKardex",
     "MovimientoKardexArchivado",
 ]
+
+from app.models.auditoria_historica import ModeloHistorico, ResultadoHistorico, RevisionHistorica
+
+from app.models.inventario import (
+    AperturaInventario, ConciliacionInicial, TransferenciaArea,
+    CustodiaExterna, EventoCustodiaExterna,
+)
+from app.models.cobertura import CoberturaArticulo, TramoCobertura
+from app.models.control_alertas import CasoControl, RevisionControl
+from app.models.analitica_operativa import ModeloOperativo, ResultadoOperativo
+from app.models.cierre_anual import CierreAnual

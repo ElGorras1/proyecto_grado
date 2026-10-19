@@ -30,6 +30,10 @@ function cerrarSesion() {
         <span class="accion">{{ seccion.accion }} <i class="pi pi-arrow-right" aria-hidden="true"></i></span>
       </router-link>
     </nav>
+    <p class="herramientas"><router-link :to="{ name: 'analitica' }"><i class="pi pi-search" aria-hidden="true"></i> Analítica y auditoría histórica</router-link></p>
+    <p class="herramientas"><router-link :to="{ name: 'analiticaOperativa' }"><i class="pi pi-chart-line" aria-hidden="true"></i> Analítica de operaciones digitales</router-link></p>
+    <p class="herramientas"><router-link :to="{ name: 'gestionInstitucional' }"><i class="pi pi-calendar" aria-hidden="true"></i> Informe institucional y cierres anuales</router-link></p>
+    <p class="herramientas"><router-link :to="{ name: 'alertasInventario' }"><i class="pi pi-exclamation-triangle" aria-hidden="true"></i> Alertas y seguimiento de inventario</router-link></p>
     <nav v-if="auth.rol === 'Administrador' || auth.rol === 'Auditor'" class="herramientas" aria-label="Herramientas de gestión">
       <span>Herramientas de gestión</span>
       <router-link v-if="auth.rol === 'Administrador'" :to="{ name: 'usuarios' }"><i class="pi pi-users" aria-hidden="true"></i> Gestión de usuarios</router-link>

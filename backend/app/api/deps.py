@@ -3,12 +3,12 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
-from app.db.session import get_db
 from app.crud.usuario import get_usuario_by_id
+from app.db.session import get_db
 from app.models.usuario import Usuario
 
 # tokenUrl solo se usa para documentación (Swagger); el login real es JSON en /auth/login.
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"/api/v1/auth/login", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 def get_current_user(
@@ -33,9 +33,21 @@ def get_current_user(
     if payload is None or "sub" not in payload:
         raise credentials_exception
 
-    usuario = get_usuario_by_id(db, int(payload["sub"]))
-    if usuario is None or usuario.estado != "activo":
+    try:
+        usuario_id = int(payload["sub"])
+    except (ValueError, TypeError, OverflowError):
+        raise credentials_exception from None
+    usuario = get_usuario_by_id(db, usuario_id)
+    if (
+        usuario is None
+        or usuario.estado != "activo"
+        or usuario.rol is None
+        or usuario.rol.estado != "activo"
+    ):
         raise credentials_exception
+
+    if usuario.rol.nombre not in ("Administrador", "Operador", "Auditor"):
+        raise HTTPException(status_code=403, detail="Rol sin permisos para este sistema")
 
     return usuario
 
@@ -54,7 +66,7 @@ def require_roles(*roles_permitidos: str):
     """
 
     def verificador(usuario: Usuario = Depends(get_current_user)) -> Usuario:
-        if usuario.rol.nombre not in roles_permitidos:
+        if usuario.rol is None or usuario.rol.nombre not in roles_permitidos:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tiene privilegios suficientes para acceder a este recurso",

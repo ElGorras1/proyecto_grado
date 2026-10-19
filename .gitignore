@@ -22,9 +22,16 @@ frontend/coverage/
 # Datos locales y archivos generados
 backend/backups/
 backend/storage/
+backend/logs/
 backend/.coverage
 backend/.ruff_cache/
 frontend/*.tsbuildinfo
 frontend/qa/*.png
 backend/count_rows.py
 backend/list_tables.py
+
+backend/.analytics/
+backend/.analytics_operativa/
+
+# Registros locales de ejecución: pueden contener datos institucionales
+*.log

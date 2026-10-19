@@ -1,4 +1,5 @@
 import pytest
+
 from app.api.deps import get_current_user
 from app.core.rate_limit import limiter
 from app.core.security import create_access_token, hash_password
@@ -20,6 +21,20 @@ def get_auth_headers(usuario: Usuario) -> dict[str, str]:
         extra_claims={"rol": usuario.rol.nombre},
     )
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_administrador_no_puede_quitarse_su_propio_rol(
+    client, usuario_admin, usuario_operador, db_session
+):
+    rol_inicial = usuario_admin.rol_id
+    r = client.put(
+        f"/api/v1/usuarios/{usuario_admin.id}",
+        headers=get_auth_headers(usuario_admin),
+        json={"rol_id": usuario_operador.rol_id},
+    )
+    assert r.status_code == 400
+    db_session.refresh(usuario_admin)
+    assert usuario_admin.rol_id == rol_inicial
 
 
 @pytest.fixture
@@ -138,7 +153,10 @@ def test_endpoints_usuarios_sin_token_401(client, usuario_admin):
     assert client.put(f"/api/v1/usuarios/{usuario_admin.id}", json={}).status_code == 401
     assert client.patch(f"/api/v1/usuarios/{usuario_admin.id}/desactivar").status_code == 401
     assert client.patch(f"/api/v1/usuarios/{usuario_admin.id}/reactivar").status_code == 401
-    assert client.post(f"/api/v1/usuarios/{usuario_admin.id}/resetear-password", json={}).status_code == 401
+    assert (
+        client.post(f"/api/v1/usuarios/{usuario_admin.id}/resetear-password", json={}).status_code
+        == 401
+    )
 
 
 # ── Test 5: Un Administrador intenta desactivarse a sí mismo → 400 ──
@@ -149,10 +167,8 @@ def test_admin_no_puede_desactivarse_a_si_mismo_400(client, usuario_admin):
     assert "propia cuenta" in resp.json()["detail"]
 
 
-# ── Test 6: Desactivar al único Administrador activo restante → 400 ──
-def test_no_puede_desactivar_ultimo_admin_activo_400(client, db_session, usuario_admin):
-    # usuario_admin es actualmente el ÚNICO Administrador activo en la base de datos (count = 1).
-    # Simulamos a otro Administrador autenticado intentando desactivar al único admin del sistema.
+# Un actor que desapareció tras autenticarse tampoco puede desactivar al único admin.
+def test_actor_inexistente_no_puede_desactivar_ultimo_admin(client, db_session, usuario_admin):
     admin_llamador = Usuario(
         id=9999,
         rol_id=usuario_admin.rol_id,
@@ -165,14 +181,17 @@ def test_no_puede_desactivar_ultimo_admin_activo_400(client, db_session, usuario
     client.app.dependency_overrides[get_current_user] = lambda: admin_llamador
     try:
         resp = client.patch(f"/api/v1/usuarios/{usuario_admin.id}/desactivar")
-        assert resp.status_code == 400
-        assert "último Administrador" in resp.json()["detail"]
+        assert resp.status_code == 403
+        db_session.refresh(usuario_admin)
+        assert usuario_admin.estado == "activo"
     finally:
         client.app.dependency_overrides.pop(get_current_user, None)
 
 
 # ── Test 7: Resetear contraseña y luego hacer login con la nueva contraseña → 200 ──
-def test_resetear_password_y_login_nuevo_password_200(client, db_session, usuario_admin, usuario_operador):
+def test_resetear_password_y_login_nuevo_password_200(
+    client, db_session, usuario_admin, usuario_operador
+):
     headers_admin = get_auth_headers(usuario_admin)
 
     nueva_pass = "NuevaClaveSuperSegura999!"
@@ -223,7 +242,9 @@ def test_editar_usuario_exito_y_duplicado(client, usuario_admin, usuario_operado
 
 
 # ── Test 9: Reactivar usuario y listar con filtros ──
-def test_reactivar_usuario_y_listar_con_filtros(client, db_session, usuario_admin, usuario_operador):
+def test_reactivar_usuario_y_listar_con_filtros(
+    client, db_session, usuario_admin, usuario_operador
+):
     headers = get_auth_headers(usuario_admin)
 
     # Desactivar operador

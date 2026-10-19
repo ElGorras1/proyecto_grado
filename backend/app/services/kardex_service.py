@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from thefuzz import fuzz
 
 from app.models.kardex import LoteCarga, MovimientoKardex
@@ -55,7 +56,7 @@ def calcular_y_validar_saldos(
         )
         .order_by(
             MovimientoKardex.lote_id.desc(),
-            MovimientoKardex.numero_pagina.desc().nullslast(),
+            func.coalesce(MovimientoKardex.orden_pagina_validado, MovimientoKardex.numero_pagina).desc().nullslast(),
             MovimientoKardex.orden_fila.desc().nullslast(),
             MovimientoKardex.id.desc(),
         )
@@ -148,10 +149,11 @@ def procesar_y_guardar_lote(
     paginas: list[ExtraccionKardexHoja],
     imagenes_paths: list[str],
     confirmar: bool = True,
+    tanda: int = 2,
 ) -> LoteCarga:
     try:
         # El lote y sus movimientos se confirman en una sola transacción.
-        lote = LoteCarga(total_imagenes=len(imagenes_paths))
+        lote = LoteCarga(total_imagenes=len(imagenes_paths), tanda=tanda)
         db.add(lote)
         db.flush()
 
@@ -188,12 +190,21 @@ def recalcular_saldos_posteriores(db: Session, articulo_id: int, confirmar: bool
                 MovimientoKardex.lote_id.isnot(None), MovimientoKardex.estado == "ACTIVO")
         .order_by(
             MovimientoKardex.lote_id.asc().nullslast(),
-            MovimientoKardex.numero_pagina.asc().nullslast(),
+            func.coalesce(MovimientoKardex.orden_pagina_validado, MovimientoKardex.numero_pagina).asc().nullslast(),
             MovimientoKardex.orden_fila.asc().nullslast(),
             MovimientoKardex.id.asc(),
         )
         .all()
     )
+
+    if any(f.revision_documental for f in movimientos):
+        from app.services.revision_documental import recalcular_revision
+        recalcular_revision(movimientos)
+        if confirmar:
+            db.commit()
+        else:
+            db.flush()
+        return
 
     saldo_acumulado = None
     ultima_fecha = None

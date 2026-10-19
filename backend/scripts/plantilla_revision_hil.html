@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' file: data:; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Revisión de Kárdex · 13 octubre 2026</title>
+<style>
+:root{--ink:#172c3c;--muted:#526574;--line:#d9e1e3;--paper:#f6f7f4;--teal:#12665e;--amber:#80580b}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,sans-serif}
+main,.card,.viewer>div{min-width:0}[hidden]{display:none!important}
+header{padding:25px 32px 18px;background:var(--ink);color:#fff}h1{font-size:29px;line-height:1.2;margin:5px 0 10px;letter-spacing:-.6px}header p{margin:6px 0;color:#d0e1e5;max-width:1000px}.eyebrow{font-size:12px;letter-spacing:2px;text-transform:uppercase}
+.stats{display:flex;gap:30px;flex-wrap:wrap;margin-top:20px}.stat strong{display:block;font-size:27px;line-height:1.1}.stat span{font-size:12px;color:#c5d7dc}
+.notice{padding:13px 32px;background:#fff3d7;color:#624619;border-bottom:1px solid #e6d6b3}.layout{display:grid;grid-template-columns:285px minmax(0,1fr);gap:22px;padding:24px 28px}aside{align-self:start;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}aside h2{font-size:16px;margin:0 0 12px}
+button,input,select,textarea{font:inherit}button,select,input{border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:white;color:var(--ink)}button{cursor:pointer}button:hover{border-color:var(--teal);background:#edf6f2}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #60ae98;outline-offset:2px}button:disabled{opacity:.45;cursor:default}
+.case-button{width:100%;text-align:left;margin:0 0 6px;padding:9px 11px;display:flex;gap:9px;align-items:start}.case-button b{font-size:12px;color:var(--teal);padding-top:3px}.case-button span{font-size:13px;line-height:1.35}.case-button.active{background:#dfeee8;border-color:#7ca898}
+.card{border:1px solid var(--line);background:white;border-radius:12px;padding:20px 22px;margin-bottom:17px}h2{font-size:21px;line-height:1.3;margin:0 0 10px}h3{font-size:16px;margin:15px 0 7px}p{margin:8px 0}.small{font-size:12px;color:var(--muted)}.tag{display:inline-block;border-radius:4px;font-size:11px;background:#edf1f2;color:#395061;padding:3px 7px;margin-right:5px}.tag.pending{background:#fff0cb;color:#72500a}.callout{border-left:3px solid var(--teal);padding:5px 13px;background:#f2f8f5;margin:12px 0}.limit{color:var(--muted);font-size:13px}
+.filters{display:grid;grid-template-columns:2fr 1fr 1.3fr;gap:10px;margin:12px 0}.filters label{display:block;font-size:12px;color:var(--muted)}.filters input,.filters select{width:100%;margin-top:4px}#pageSelect{width:100%;margin:5px 0 12px}.page-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.toolbar a{color:var(--teal)}
+.viewer{display:grid;grid-template-columns:minmax(310px,.9fr) minmax(0,1.1fr);gap:18px;align-items:start}.photo-panel{position:sticky;top:12px}.image-frame{background:#e9ece7;border:1px solid var(--line);height:74vh;overflow:auto;margin-top:9px;border-radius:8px}#photo{display:block;width:100%;max-width:none}
+.table-wrap{overflow:auto;max-height:72vh;border:1px solid var(--line);border-radius:8px}table{width:100%;border-collapse:collapse;font-size:12px;background:white}th{position:sticky;top:0;background:#e9f0ef;text-align:left;z-index:1}th,td{padding:9px 8px;border-bottom:1px solid #e3e8e7;vertical-align:top}td.num{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}.row-button{padding:0;border:0;background:transparent;color:var(--teal);text-decoration:underline;font-size:12px}
+tr.example{background:#e8f3ed}tr.flag td:first-child{border-left:3px solid #d0982f}.detail-cell{min-width:165px}.alert{color:#946100}.table-help{margin:10px 0;font-size:12px;color:var(--muted)}.outside{padding:10px;background:#eef1f0;border-radius:7px;font-size:12px;margin:10px 0}.notes{background:#f5f7f2;border-radius:7px;padding:12px;font-size:13px;margin-bottom:12px}.notes p{margin:3px 0}details{margin-top:12px}summary{cursor:pointer;color:var(--teal)}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:48vh;overflow:auto;font:12px/1.5 Consolas,monospace;background:#f2f4f3;padding:12px;border-radius:7px}
+textarea{width:100%;min-height:105px;padding:12px;border:1px solid var(--line);border-radius:7px;resize:vertical}footer{padding:20px 32px;color:var(--muted);font-size:12px}footer a{color:var(--teal)}dialog{border:1px solid var(--line);border-radius:12px;width:min(960px,96vw);max-height:94vh;padding:22px;color:var(--ink)}dialog::backdrop{background:#132734a8}.dialog-head{display:flex;justify-content:space-between;gap:15px}.two{display:grid;grid-template-columns:1fr 1fr;gap:15px}.two pre{max-height:65vh}.empty{padding:12px;color:var(--muted)}
+@media(max-width:1150px){.layout{grid-template-columns:230px minmax(0,1fr);padding:18px;gap:14px}.viewer{grid-template-columns:1fr}.photo-panel{position:static}.image-frame{height:65vh}.table-wrap{max-height:none}aside{max-height:90vh}}
+@media(max-width:760px){header,.notice{padding:18px}.layout{grid-template-columns:1fr;padding:12px}aside{position:static;max-height:230px}.filters,.two{grid-template-columns:1fr}.stats{gap:17px}.card{padding:16px}.stat strong{font-size:22px}h1{font-size:25px}}
+@media print{aside,.filters,.toolbar,textarea,#downloadDraft{display:none}.layout{display:block}.viewer{display:block}.photo-panel{position:static}.image-frame,.table-wrap{height:auto;max-height:none;overflow:visible}header{color:#111;background:white}header p,.stat span{color:#444}.card{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header><div class="eyebrow">Fundación Simón I. Patiño · Revisión documental</div><h1>Entender el error antes de corregir</h1>
+<p>Ejemplos agrupados por tipo, fotografía completa y todas las filas vecinas. Este expediente conserva el corte del 13 de octubre de 2026 y funciona sin conexión.</p>
+<div class="stats"><div class="stat"><strong>693</strong><span>hojas inspeccionadas</span></div><div class="stat"><strong>11.887</strong><span>registros históricos incluidos</span></div><div class="stat"><strong>1.378</strong><span>filas con avisos existentes</span></div><div class="stat"><strong>23</strong><span>criterios por definir</span></div><div class="stat"><strong>0</strong><span>correcciones aplicadas</span></div></div></header>
+<div class="notice"><b>Primera revisión, pendiente de criterio humano.</b> Una alerta puede venir de la lectura, del documento o de una interpretación. La ausencia de alerta tampoco certifica la fila. No se ha modificado el sistema.</div>
+<div class="layout">
+<aside><h2>Tipos y ejemplos</h2><div id="caseList"></div></aside>
+<main>
+<section class="card" id="caseCard"></section>
+<section class="card">
+<h2>Fotografía y movimientos de la hoja</h2>
+<p class="small">Puedes explorar las 693 hojas, incluso las que no tienen avisos. Las filas se muestran en el orden digital actual; todavía no es un orden cronológico validado.</p>
+<div class="filters"><label>Buscar artículo, detalle o ID de movimiento<input id="search" type="search" placeholder="Ej.: MURCIELAGOS o 9657"></label><label>Tanda<select id="tanda"><option value="">Todas</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label><label>Avisos existentes<select id="flag"><option value="">Todas las hojas</option><option value="any">Con algún aviso</option><option value="none">Sin avisos</option><option value="saldo">Saldo</option><option value="fecha">Fecha</option><option value="area">Área</option><option value="referencia">Referencia</option></select></label></div>
+<label class="small" for="pageSelect" id="countPages"></label><select id="pageSelect"></select>
+<div id="pageHeading"></div><div id="articlePages" class="page-links"></div>
+<div id="pageContent" class="viewer" style="margin-top:17px"><div class="photo-panel"><div class="toolbar"><a id="openPhoto" target="_blank" rel="noopener">Abrir foto original</a><label class="small" for="zoom">Ampliación</label><select id="zoom"><option value="100">100%</option><option value="150">150%</option><option value="200">200%</option><option value="300">300%</option></select></div><div class="image-frame"><img id="photo" alt=""></div><p class="small">Copia exacta del archivo fuente; puede ampliarse sin alterar las cifras.</p></div>
+<div><div id="visualNotes" class="notes"></div><div id="previous"></div><p class="table-help">Verde: filas del ejemplo elegido. Borde ámbar: aviso existente. Haz clic en un ID para comparar la extracción conservada con el dato vigente.</p><div class="table-wrap"><table><thead><tr><th>ID / fila</th><th>Fecha guardada</th><th>Detalle / REF / ÁREA</th><th>I</th><th>S</th><th>Saldo guardado</th><th>Esperado*</th><th>Avisos</th></tr></thead><tbody id="rows"></tbody></table></div><p class="small">* Cálculo auxiliar: saldo digital anterior + ingreso − salida. No es un saldo validado; puede partir de una lectura equivocada, otra hoja mal ordenada, una anulación o un recuento.</p><details><summary>Hipótesis automáticas de la hoja</summary><pre id="hypotheses"></pre></details></div></div>
+</section>
+<section class="card"><h2>Tu criterio para este tipo</h2><p>Cuando lo revisemos, indica qué dato debe quedar vigente, qué evidencia conservamos y cuándo dejar una duda sin resolver. El mismo criterio podrá usarse después en casos equivalentes, comprobando cada hoja.</p><label for="draft" class="small" id="draftLabel"></label><textarea id="draft" placeholder="Escribe un criterio o una corrección del ejemplo. Sigue siendo un borrador."></textarea><div class="toolbar" style="margin-top:10px"><button id="downloadDraft">Descargar mis criterios en borrador</button><span class="small" id="draftStatus">No se guarda en el sistema. Descarga antes de cerrar esta página.</span></div></section>
+<section class="card"><h2>Conservar el original y trabajar con el dato validado</h2><p>El paquete incluye las fotografías sin cambios, la extracción original disponible y el dato vigente del corte. Las observaciones de esta revisión están guardadas aparte.</p><p>Después de acordar un criterio, cada cambio deberá conservar valor anterior y nuevo, motivo, autor, fecha, criterio utilizado y vínculo a la fotografía. Una inconsistencia del papel podrá quedar resuelta como caso de auditoría sin borrar lo que estaba escrito.</p><p class="small">Alcance: inspección de las 693 hojas completas en atlas y ampliación de ejemplos. No constituye una certificación de cada carácter ni acredita por sí sola pérdidas, ingresos, áreas o fechas que no constan en el documento. Los 23 ejemplos representan familias y no son un conteo de todos los errores.</p></section>
+</main></div>
+<footer>Corte: <span id="cut"></span> · <a href="catalogo_tipos.json">Catálogo</a> · <a href="criterios_pendientes.json">Criterios pendientes</a> · <a href="fuentes_manifest.json">Integridad de fotos</a> · <a href="verificacion_sin_cambios.json">Verificación de solo lectura</a> · <a href="snapshot_movimientos_sin_modificar.json.gz">Respaldo de 11.896 registros</a></footer>
+<dialog id="rowDialog"><div class="dialog-head"><h2 id="rowTitle"></h2><button id="closeDialog" aria-label="Cerrar comparación">Cerrar</button></div><p class="small">La extracción conservada no se sustituye por el dato corregido. Esta vista no escribe cambios.</p><div class="two"><section><h3>Extracción conservada · datos_originales</h3><pre id="originalRow"></pre></section><section><h3>Dato vigente del corte</h3><pre id="currentRow"></pre></section></div></dialog>
+<script id="data" type="application/json">__DATOS_REVISION__</script>
+<script>
+'use strict';
+const DATA=JSON.parse(document.getElementById('data').textContent);
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+const val=v=>v===null||v===undefined?'—':esc(v);
+const byPage=new Map(DATA.paginas.map(p=>[p.id,p]));
+const byRow=new Map(DATA.paginas.flatMap(p=>p.filas.map(r=>[r.id,{r,p}])));
+const drafts=Object.fromEntries(DATA.casos.map(c=>[c.codigo,'']));
+let chosenCase=DATA.casos[0],chosenPage=chosenCase.paginas[0];
+function chooseCase(code){
+ drafts[chosenCase.codigo]=$('draft').value;
+ chosenCase=DATA.casos.find(c=>c.codigo===code);
+ $('caseList').querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.case===code));
+ $('caseCard').innerHTML='<span class="tag">'+esc(chosenCase.clase)+'</span><span class="tag pending">Criterio pendiente</span><h2 style="margin-top:10px">'+esc(code+' · '+chosenCase.titulo)+'</h2><p>'+esc(chosenCase.hallazgo)+'</p><div class="callout">'+esc(chosenCase.contexto)+'</div><h3>Decisión que necesitamos</h3><p>'+esc(chosenCase.criterio_por_definir)+'</p><p class="limit">'+esc(chosenCase.limite)+'</p><div class="page-links">'+chosenCase.paginas.map(k=>'<button data-page="'+esc(k)+'">'+esc(k)+' · '+esc(byPage.get(k).articulo)+'</button>').join('')+'</div>';
+ $('draft').value=drafts[code];$('draftLabel').textContent='Borrador para '+code+' · '+chosenCase.titulo;
+ navigate(chosenCase.paginas[0],true);
+}
+function matches(p){
+ const query=norm($('search').value).trim();
+ const term=query=== ''||norm(p.articulo+' '+p.id+' '+p.filas.map(r=>[r.id,r.detalle,r.area,r.referencia].join(' ')).join(' ')).includes(query);
+ const tanda=$('tanda').value, flag=$('flag').value;
+ return term&&(!tanda||String(p.tanda)===tanda)&&(!flag||(flag==='any'?p.avisos.length>0:flag==='none'?p.avisos.length===0:p.avisos.includes(flag)));
+}
+function fillPages(){
+ const pages=DATA.paginas.filter(matches);
+ $('countPages').textContent=pages.length+' de '+DATA.paginas.length+' hojas';
+ $('pageSelect').innerHTML=pages.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.articulo+' · '+p.id+' · Tanda '+p.tanda+' · '+p.filas.length+' filas')+'</option>').join('');
+ if(!pages.length){$('countPages').textContent='Sin coincidencias. Cambia o limpia los filtros.';$('pageHeading').textContent='';$('articlePages').textContent='';$('pageContent').hidden=true;return;}
+ $('pageContent').hidden=false;
+ if(!pages.some(p=>p.id===chosenPage))chosenPage=pages[0].id;
+ $('pageSelect').value=chosenPage;renderPage();
+}
+function navigate(key,reset){
+ if(!byPage.has(key))return;
+ chosenPage=key;
+ if(reset){$('search').value='';$('tanda').value='';$('flag').value='';}
+ fillPages();
+ history.replaceState(null,'','#tipo='+chosenCase.codigo+'&hoja='+key);
+}
+function renderPage(){
+ const p=byPage.get(chosenPage),ids=new Set(chosenCase.movimientos);
+ $('pageHeading').innerHTML='<h3>'+esc(p.articulo)+'</h3><span class="tag">'+esc(p.id)+'</span><span class="tag">Tanda '+esc(p.tanda)+'</span><span class="tag">'+p.filas.length+' filas</span><span class="tag">'+p.movimientos_con_avisos.length+' con aviso</span>';
+ const others=DATA.paginas.filter(q=>q.articulo_id===p.articulo_id);
+ $('articlePages').innerHTML='<span class="small">Hojas del artículo en orden digital:</span>'+others.map(q=>'<button data-page="'+esc(q.id)+'" '+(q.id===p.id?'disabled':'')+'>'+esc(q.id)+'</button>').join('');
+ $('photo').src=p.foto_local;$('photo').alt='Kárdex '+p.articulo+' '+p.id;$('openPhoto').href=p.foto_local;
+ $('zoom').value='100';$('photo').style.width='100%';
+ $('visualNotes').innerHTML='<b>Observación de la revisión</b><p>'+esc(p.cotejo.observacion)+'</p><p class="small">Inspección de hoja completa · pendiente de decisión; no equivale a aprobación de todas sus filas.</p>';
+ const prev=p.anterior_fuera_hoja;
+ $('previous').innerHTML=prev?'<div class="outside"><b>Fila previa fuera de esta hoja:</b> <button class="row-button" data-row="'+prev.id+'">'+prev.id+'</button> · '+esc(prev.detalle)+' · saldo '+val(prev.saldo_registrado)+' · <button data-page="'+esc(byRow.get(prev.id).p.id)+'">Ver hoja previa</button></div>':'<div class="outside">No hay fila anterior en el corte digital del artículo. Esto no prueba que su saldo inicial sea cero.</div>';
+ $('rows').innerHTML=p.filas.map(r=>'<tr class="'+(ids.has(r.id)?'example ':'')+(r.avisos.length?'flag':'')+'"><td><button class="row-button" data-row="'+r.id+'">'+r.id+'</button><br><span class="small">fila '+val(r.orden_fila)+'</span></td><td>'+val(r.fecha_movimiento)+'</td><td class="detail-cell">'+val(r.detalle)+'<br><span class="small">REF: '+val(r.referencia)+'<br>ÁREA: '+val(r.area)+'</span></td><td class="num">'+val(r.ingresos)+'</td><td class="num">'+val(r.salidas)+'</td><td class="num">'+val(r.saldo_registrado)+'</td><td class="num">'+val(r.saldo_esperado_con_anterior)+'</td><td class="alert">'+esc(r.avisos.join(', ')||'—')+'</td></tr>').join('');
+ $('hypotheses').textContent=p.hipotesis.join('\n')||'Sin hipótesis automáticas en el corte; no equivale a cotejo confirmado.';
+}
+function showRow(id){
+ const entry=byRow.get(Number(id));if(!entry)return;const r=entry.r;
+ $('rowTitle').textContent='Movimiento '+r.id+' · '+entry.p.articulo;
+ $('originalRow').textContent=JSON.stringify(r.datos_originales,null,2);
+ const current=Object.fromEntries(Object.entries(r).filter(([k])=>k!=='datos_originales'));
+ $('currentRow').textContent=JSON.stringify(current,null,2);$('rowDialog').showModal();
+}
+$('caseList').innerHTML=DATA.casos.map(c=>'<button class="case-button" data-case="'+c.codigo+'"><b>'+c.codigo+'</b><span>'+esc(c.titulo)+'</span></button>').join('');
+document.addEventListener('click',e=>{
+ const c=e.target.closest('[data-case]'),p=e.target.closest('[data-page]'),r=e.target.closest('[data-row]');
+ if(c)chooseCase(c.dataset.case);else if(p)navigate(p.dataset.page,true);else if(r)showRow(r.dataset.row);
+});
+['tanda','flag'].forEach(k=>$(k).addEventListener('change',fillPages));
+$('search').addEventListener('input',fillPages);
+$('pageSelect').addEventListener('change',()=>navigate($('pageSelect').value,false));
+$('zoom').addEventListener('change',()=>{$('photo').style.width=$('zoom').value+'%';});
+$('closeDialog').addEventListener('click',()=>$('rowDialog').close());
+$('draft').addEventListener('input',()=>{drafts[chosenCase.codigo]=$('draft').value;});
+$('downloadDraft').addEventListener('click',()=>{
+ drafts[chosenCase.codigo]=$('draft').value;
+ const payload={estado:'BORRADOR_SIN_APROBAR',corte:DATA.resumen.corte_bolivia,correcciones_aplicadas:0,criterios:DATA.casos.map(c=>({codigo:c.codigo,titulo:c.titulo,criterio_borrador:drafts[c.codigo],estado:'PENDIENTE',aprobador:null,aprobado_en:null}))};
+ const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'}));
+ const a=document.createElement('a');a.href=url;a.download='mis_criterios_hil_borrador.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ $('draftStatus').textContent='Borrador descargado. No se aplicó ninguna corrección.';
+});
+$('cut').textContent=DATA.resumen.corte_bolivia;
+const hash=new URLSearchParams(location.hash.slice(1)),code=hash.get('tipo'),page=hash.get('hoja');
+chooseCase(DATA.casos.some(c=>c.codigo===code)?code:DATA.casos[0].codigo);
+if(byPage.has(page))navigate(page,true);
+</script></body></html>
+

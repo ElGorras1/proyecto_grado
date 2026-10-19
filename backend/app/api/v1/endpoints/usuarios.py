@@ -19,6 +19,24 @@ from app.schemas.usuario import (
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
 
 
+def bloquear_administracion(db: Session, actual: Usuario):
+    # Serializa bajas/cambios de rol: dos administradores no pueden retirarse
+    # mutuamente los permisos y dejar el sistema sin administración.
+    db.query(Rol).filter(Rol.nombre == "Administrador").with_for_update().all()
+    actual = db.query(Usuario).filter_by(id=actual.id).populate_existing().first()
+    if actual is None:
+        raise HTTPException(403, "La cuenta administrativa ya no existe")
+    db.expire(actual, ["rol"])
+    if (
+        actual.estado != "activo"
+        or actual.rol.nombre != "Administrador"
+        or actual.rol.estado != "activo"
+    ):
+        raise HTTPException(
+            403, "Los permisos administrativos cambiaron. Inicia sesión nuevamente."
+        )
+
+
 @router.get("/roles", response_model=list[RolOut])
 def listar_roles(
     db: Session = Depends(get_db),
@@ -132,6 +150,7 @@ def actualizar_usuario(
     current_user: Usuario = Depends(require_roles("Administrador")),
 ):
     """Actualiza los datos de un usuario (excepto contraseña)."""
+    bloquear_administracion(db, current_user)
     usuario = db.query(Usuario).filter(Usuario.id == id).first()
     if not usuario:
         raise HTTPException(
@@ -140,7 +159,9 @@ def actualizar_usuario(
         )
 
     if payload.email is not None and payload.email != usuario.email:
-        existente = db.query(Usuario).filter(Usuario.email == payload.email, Usuario.id != id).first()
+        existente = (
+            db.query(Usuario).filter(Usuario.email == payload.email, Usuario.id != id).first()
+        )
         if existente:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -155,6 +176,8 @@ def actualizar_usuario(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El rol especificado no existe",
             )
+        if usuario.id == current_user.id and rol.nombre != "Administrador":
+            raise HTTPException(400, "No puede quitar el rol Administrador de su propia cuenta")
         usuario.rol_id = payload.rol_id
 
     if "area_id" in payload.model_fields_set:
@@ -195,7 +218,8 @@ def desactivar_usuario(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("Administrador")),
 ):
-    """Desactiva un usuario (baja lógica). No permite auto-desactivación ni desactivar al último administrador."""
+    """Baja lógica; protege la propia cuenta y al último administrador."""
+    bloquear_administracion(db, current_user)
     usuario = db.query(Usuario).filter(Usuario.id == id).first()
     if not usuario:
         raise HTTPException(

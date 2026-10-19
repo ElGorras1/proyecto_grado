@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field, model_validator
 
@@ -57,6 +57,8 @@ class MovimientoKardexCreate(BaseModel):
     ruta_imagen_respaldo: Optional[str] = None
     numero_pagina: Optional[int] = None
     orden_fila: Optional[int] = None
+    orden_pagina_validado: Optional[int] = None
+    revision_documental: Optional[dict] = None
     tiene_error_saldo: bool = False
     fecha_original: Optional[date] = None
     datos_originales: Optional[dict] = None
@@ -71,18 +73,37 @@ class MovimientoKardexCreate(BaseModel):
     requiere_auditoria_referencia: bool = False
     # Transacciones modernas
     usuario_operador: Optional[str] = None
+    encargado_id: Optional[int] = None
+    usuario_registrador_id: Optional[int] = None
+    encargado_nombre: Optional[str] = None
+    registrado_en: Optional[datetime] = None
+    ocurrido_en: Optional[datetime] = None
+    solicitud_id: Optional[str] = None
+    alertas_control: Optional[list[dict]] = None
+    justificacion_alertas: Optional[str] = None
     tipo_operacion: Optional[str] = None
     receptor: Optional[str] = None
+    receptor_tipo: Optional[str] = None
+    area_operativa_id: Optional[int] = None
     feria_id: Optional[int] = None
     ciudad_feria: Optional[str] = None
     canal_venta: Optional[str] = None
     motivo_baja: Optional[str] = None
     referencia_documento: Optional[str] = None
+    movimiento_origen_id: Optional[int] = None
+    devuelto_por: Optional[str] = None
+    corrige_movimiento_id: Optional[int] = None
+    cantidad_anterior: Optional[int] = None
+    cantidad_corregida: Optional[int] = None
+    motivo_correccion: Optional[str] = None
+    autorizado_por_id: Optional[int] = None
     estado: str = "ACTIVO"
 
 
 class MovimientoKardexOut(MovimientoKardexCreate):
     id: int
+    tanda: Optional[int] = Field(default=None, ge=1, le=9999)
+    tratamiento_hil: Optional[dict] = None
 
     class Config:
         from_attributes = True
@@ -99,6 +120,7 @@ class MovimientoKardexEdit(BaseModel):
     requiere_auditoria_referencia: Optional[bool] = None
     fecha_movimiento: Optional[date] = None
     decision_fecha: Optional[Literal["corregir", "confirmar_documento"]] = None
+    origen_fecha: Optional[Literal["FOTO", "HIPOTESIS", "SECUENCIA_AJUSTADA"]] = None
     motivo: str = Field(default="", max_length=1000)
     referencia: Optional[str] = Field(default=None, max_length=100)
 
@@ -108,4 +130,6 @@ class MovimientoKardexEdit(BaseModel):
             raise ValueError("Indica la fecha corregida")
         if self.fecha_movimiento is not None and self.decision_fecha != "corregir":
             raise ValueError("Cambiar una fecha requiere la decisión corregir")
+        if self.origen_fecha is not None and self.decision_fecha != "corregir":
+            raise ValueError("El origen de fecha requiere la decisión corregir")
         return self

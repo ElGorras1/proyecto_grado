@@ -270,6 +270,7 @@ def test_movimiento_actual_rechaza_salida_con_stock_insuficiente(
     client,
     db_session,
     usuario_operador,
+    usuario_admin,
     activos_prueba,
 ):
     articulo, _ = activos_prueba
@@ -282,15 +283,24 @@ def test_movimiento_actual_rechaza_salida_con_stock_insuficiente(
     )
     cantidad_inicial = db_session.query(MovimientoKardex).count()
 
+    apertura = client.post(f"/api/v1/kardex/articulos/{articulo.id}/apertura",
+        headers=auth_headers(usuario_admin), json={"cantidad": 5,
+        "referencia_documento": "ACTA-TEST", "justificacion": "Conteo físico de prueba", "conteo_verificado": True})
+    assert apertura.status_code == 200
+
     response = client.post(
         "/api/v1/kardex/movimiento-actual",
         headers=auth_headers(usuario_operador),
         json={
             "articulo_id": articulo.id,
+            "solicitud_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             "tipo": "salida",
             "cantidad": 6,
             "nodo_grafo": "Ventas",
             "tipo_operacion": "Ventas",
+            "receptor": "Cliente de prueba",
+            "receptor_tipo": "PERSONA",
+            "referencia_documento": "FACT-TEST",
         },
     )
 
@@ -309,20 +319,28 @@ def test_movimiento_actual_persiste_saldo_operador_y_auditoria(
     client,
     db_session,
     usuario_operador,
+    usuario_admin,
     activos_prueba,
 ):
     articulo, _ = activos_prueba
+
+    apertura = client.post(f"/api/v1/kardex/articulos/{articulo.id}/apertura",
+        headers=auth_headers(usuario_admin), json={"cantidad": 0,
+        "referencia_documento": "ACTA-TEST", "justificacion": "Conteo físico de prueba", "conteo_verificado": True})
+    assert apertura.status_code == 200
 
     response = client.post(
         "/api/v1/kardex/movimiento-actual",
         headers=auth_headers(usuario_operador),
         json={
             "articulo_id": articulo.id,
+            "solicitud_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             "tipo": "ingreso",
             "cantidad": 8,
             "nodo_grafo": "Inventario / Compra",
             "tipo_operacion": "Inventario / Compra",
             "observaciones": "Saldo inicial de prueba",
+            "referencia_documento": "ACTA-COMPRA",
         },
     )
 
@@ -332,6 +350,9 @@ def test_movimiento_actual_persiste_saldo_operador_y_auditoria(
     assert data["salidas"] is None
     assert data["saldo_registrado"] == 8
     assert data["usuario_operador"] == usuario_operador.nombre
+    assert data["encargado_id"] == usuario_operador.id
+    assert data["usuario_registrador_id"] == usuario_operador.id
+    assert data["encargado_nombre"] == usuario_operador.nombre
 
     evento = (
         db_session.query(AuditoriaSistema)
@@ -343,6 +364,50 @@ def test_movimiento_actual_persiste_saldo_operador_y_auditoria(
     )
     assert evento.usuario_id == usuario_operador.id
     assert evento.detalle["nuevo_saldo"] == 8
+
+
+def test_encargado_distinto_del_registrador_y_cuenta_inactiva_rechazada(
+    client, db_session, usuario_admin, usuario_operador, activos_prueba,
+):
+    articulo, _ = activos_prueba
+    apertura = client.post(
+        f"/api/v1/kardex/articulos/{articulo.id}/apertura",
+        headers=auth_headers(usuario_admin),
+        json={"cantidad": 5, "referencia_documento": "ACTA-TEST",
+              "justificacion": "Conteo físico", "conteo_verificado": True},
+    )
+    assert apertura.status_code == 200
+    opciones = client.get("/api/v1/kardex/encargados",
+                          headers=auth_headers(usuario_operador))
+    assert opciones.status_code == 200
+    assert {u["id"] for u in opciones.json()} == {usuario_admin.id, usuario_operador.id}
+
+    payload = {"articulo_id": articulo.id, "encargado_id": usuario_admin.id,
+               "solicitud_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+               "tipo": "salida", "cantidad": 2, "nodo_grafo": "Ventas",
+               "referencia_documento": "ACTA-TEST"}
+    respuesta = client.post("/api/v1/kardex/movimiento-actual",
+                             headers=auth_headers(usuario_operador), json=payload)
+    assert respuesta.status_code == 200
+    movimiento = respuesta.json()
+    assert (movimiento["encargado_id"], movimiento["usuario_registrador_id"]) == (
+        usuario_admin.id, usuario_operador.id)
+    assert movimiento["encargado_nombre"] == usuario_admin.nombre
+    assert movimiento["usuario_operador"] == usuario_operador.nombre
+    evento = db_session.query(AuditoriaSistema).filter_by(
+        accion="crear_movimiento_inventario", recurso_id=movimiento["id"]).one()
+    assert evento.detalle["encargado_id"] == usuario_admin.id
+    assert evento.detalle["usuario_registrador_id"] == usuario_operador.id
+
+    usuario_admin.estado = "inactivo"
+    db_session.commit()
+    assert usuario_admin.id not in {u["id"] for u in client.get(
+        "/api/v1/kardex/encargados", headers=auth_headers(usuario_operador)).json()}
+    rechazada = client.post("/api/v1/kardex/movimiento-actual",
+                            headers=auth_headers(usuario_operador),
+                            json={**payload, "solicitud_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"})
+    assert rechazada.status_code == 422
+    assert db_session.query(MovimientoKardex).filter_by(articulo_id=articulo.id).count() == 1
 
 
 def test_movimiento_actual_rechaza_nodo_vacio(
@@ -357,9 +422,11 @@ def test_movimiento_actual_rechaza_nodo_vacio(
         headers=auth_headers(usuario_operador),
         json={
             "articulo_id": articulo.id,
+            "solicitud_id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
             "tipo": "ingreso",
             "cantidad": 1,
             "nodo_grafo": "   ",
+            "referencia_documento": "ACTA-TEST",
         },
     )
 

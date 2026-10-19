@@ -1,0 +1,37 @@
+const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const path=require('path');
+(async()=>{
+ const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+ const page=await browser.newPage({viewport:{width:1440,height:1000}});
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>sessionStorage.setItem('access_token','qa-ficticio'));
+ const art={id:1,nombre:'Artículo de demostración',codigo:'QA-01',alertas_rojas:2,alertas_amarillas:0};
+ const filas=[1,2].map(tanda=>({id:tanda,lote_id:tanda,tanda,fecha_movimiento:'2025-01-01',detalle:'Documento de la tanda '+tanda,ingresos:10,salidas:null,saldo_registrado:10,numero_pagina:1,orden_fila:1,tipos_alerta:['saldo'],tiene_error_saldo:true,area_estado:'NO_APLICA',referencia_estado:'AUSENTE',fecha_estado:'SIN_ALERTA'}));
+ await page.route('**/api/v1/**',async route=>{
+  const url=new URL(route.request().url());let data;
+  if(url.pathname.endsWith('/auth/me'))data={id:1,nombre:'Cuenta QA',rol:'Administrador'};
+  else if(url.pathname.endsWith('/articulos'))data=[art];
+  else if(url.pathname.endsWith('/tandas'))data={tanda_nuevas_cargas:2,tandas:[1,2].map(id=>({id,nombre:'Tanda '+id,movimientos:1,escaneos:1}))};
+  else if(url.pathname.endsWith('/limites-carga'))data={paginas:20,mb_imagen:20,mb_lote:100};
+  else if(url.pathname.includes('/historial/') || url.pathname.endsWith('/errores'))data=filas;
+  else throw Error('Ruta inesperada '+url.pathname);
+  await route.fulfill({json:data});
+ });
+ await page.goto('http://localhost:5173/kardex-digital');
+ await page.getByText('Artículo de demostración',{exact:true}).click();
+ await page.getByText('Documento de la tanda 2',{exact:true}).waitFor();
+ await page.screenshot({path:path.join(__dirname,'tandas-escritorio.png'),fullPage:true});
+ await page.locator('.tandas-controles').getByRole('button',{name:/Tanda 1/}).click();
+ if(await page.getByText('Documento de la tanda 2',{exact:true}).count())throw Error('No filtra tanda 1');
+ await page.locator('.tandas-controles').getByRole('button',{name:/Tanda 2/}).click();
+ if(await page.getByText('Documento de la tanda 1',{exact:true}).count())throw Error('No filtra tanda 2');
+ await page.setViewportSize({width:390,height:844});
+ await page.screenshot({path:path.join(__dirname,'tandas-movil.png'),fullPage:true});
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth))throw Error('Desborde horizontal');
+ await page.getByRole('button',{name:/Escanear más páginas/}).click();
+ await page.getByRole('heading',{name:'Subir Fotografías del Kárdex · Tanda 2'}).waitFor();
+ await page.screenshot({path:path.join(__dirname,'tandas-carga.png'),fullPage:true});
+ if(errors.length)throw Error(errors.join('\n'));
+ console.log('QA tandas: filtros, carga Tanda 2, escritorio y móvil correctos. Datos ficticios.');
+ await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

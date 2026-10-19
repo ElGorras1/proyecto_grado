@@ -21,7 +21,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-from fastapi.staticfiles import StaticFiles
+from app.api.evidencia import router as evidencia_router
 import os
 
 app.add_middleware(
@@ -33,7 +33,7 @@ app.add_middleware(
 )
 
 os.makedirs("storage/kardex_images", exist_ok=True)
-app.mount("/storage", StaticFiles(directory="storage"), name="storage")
+app.include_router(evidencia_router)
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
@@ -41,3 +41,7 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 @app.get("/health", tags=["Sistema"])
 def health_check():
     return {"status": "ok", "environment": settings.ENVIRONMENT}
+
+from app.services.trabajador_analitica import iniciar, detener
+app.add_event_handler('startup', iniciar)
+app.add_event_handler('shutdown', detener)
