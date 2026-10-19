@@ -4,7 +4,8 @@ import InventarioActualView from './InventarioActualView.vue'
 const { get, post, auth } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), auth: { rol: 'Administrador', usuario: { id: 1 } } }))
 vi.mock('@/services/api', () => ({ default: { get, post } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
-let articulo: any
+let articulo: { id: number; codigo: string; nombre: string; stock_actual: number | null;
+  apertura: Record<string, unknown> | null; base_kardex?: Record<string, unknown> }
 beforeEach(() => {
   auth.rol = 'Administrador'
   articulo = { id: 1, codigo: 'QA-1', nombre: 'Libro', stock_actual: null, apertura: null }
@@ -198,7 +199,7 @@ describe('Correcciones operativas', () => {
     const original = { id: 21, tipo_operacion: 'Ventas', estado: 'ACTIVO',
       salidas: 2, ingresos: null, saldo_registrado: 8, area_operativa_id: 2,
       referencia_documento: 'FACT-01', corrige_movimiento_id: null }
-    let movimientos: any[] = [original]
+    let movimientos: Record<string, unknown>[] = [original]
     get.mockImplementation((url: string) => Promise.resolve({ data:
       url === '/kardex/articulos' ? [{ ...articulo }] :
       url === '/kardex/historial-actual/1' ? movimientos :
@@ -206,7 +207,7 @@ describe('Correcciones operativas', () => {
       url === '/kardex/encargados' ? [{ id: 1, nombre: 'Encargada' }] :
       url.includes('/existencias-area') ? { total_institucional: articulo.stock_actual,
         sin_ubicacion_confirmada: 0, en_custodia_externa: 0,
-        areas: [{ area_id: 2, area: 'Galería', cantidad: articulo.stock_actual - 4 }],
+        areas: [{ area_id: 2, area: 'Galería', cantidad: (articulo.stock_actual ?? 0) - 4 }],
         estado: 'DISTRIBUCION_COMPLETA' } :
       url.includes('/conciliacion-inicial') ? { estado: 'NO_DISPONIBLE' } : [] }))
     post.mockImplementation((url: string) => {
@@ -251,7 +252,7 @@ describe('Apertura del inventario', () => {
     let distribucion = { total_institucional: 10, sin_ubicacion_confirmada: 0,
       en_custodia_externa: 0, areas: [{ area_id: 2, area: 'Galería', cantidad: 6 },
         { area_id: 3, area: 'Depósito', cantidad: 4 }], estado: 'DISTRIBUCION_COMPLETA' }
-    let custodias: any[] = []
+    let custodias: Record<string, unknown>[] = []
     let vistaPreviaEntrega = true
     get.mockImplementation((url: string) => Promise.resolve({ data:
       url === '/kardex/articulos' ? [{ ...articulo }] :
@@ -510,7 +511,7 @@ describe('Apertura del inventario', () => {
   })
   it('no permite aprobar dos veces mientras espera respuesta y muestra errores', async () => {
     const w = await detalle()
-    let rechazar: any
+    let rechazar!: (error: unknown) => void
     post.mockImplementation(() => new Promise((_, reject) => { rechazar = reject }))
     await w.get('form').trigger('submit')
     await w.get('form').trigger('submit')

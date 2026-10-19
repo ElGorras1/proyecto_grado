@@ -11,11 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_roles
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.activos import Activo
-from app.models.inventario import AperturaInventario
 from app.models.kardex import MovimientoKardex
 from app.models.usuario import Usuario
 from app.services.control_alertas import registrar_caso

@@ -83,6 +83,14 @@ No es necesario convertir todas las mejoras condicionales en requisito de la sig
 
 ## Comprobaciones y límites
 
+La auditoría integral posterior del 18/10 corrigió altas no atómicas y códigos repetibles, existencias resumidas, avisos que contaban notas/anulaciones, y consultas de evidencia que evaluaban artículos ajenos. Retiró 30 archivos sin uso y dependencias innecesarias, actualizó paquetes con avisos de seguridad y añadió dos índices, diagnóstico de conexión y comprobaciones automáticas. El detalle técnico vigente está en [el README](../README.md#auditoría-integral-del-18102026).
+
+La versión de esquema actual es `q72c31ed9f46`. Hubo respaldo completo restaurado, ensayo de upgrade/downgrade/upgrade y aplicación de índices con comparación de las 44 tablas y secuencias: solo cambió `alembic_version`. También quedaron intactos 926 archivos de evidencia/modelos, la fuente original, los 116 tratamientos HIL y los 8.367 movimientos elegibles.
+
+Comprobación final: 272 pruebas backend aprobadas y una omitida, 79 frontend, 101 pruebas PostgreSQL aisladas y 66 consultas de lectura sobre datos reales con resultado esperado. Compilación y análisis estático sin errores; cero vulnerabilidades conocidas reportadas por las auditorías Python/npm al cierre. La retirada de cuatro pruebas frontend corresponde al único componente huérfano eliminado, sin reducir la cobertura de los componentes utilizados.
+
+Esto atiende parte de N24 y N26–N28, pero no certifica producción ni reemplaza N29–N30. Siguen pendientes un despliegue ensayado completo, carga/concurrencia representativa, piloto con personal, calibración y mediciones del detector. Algunas consultas analíticas completas tardaron alrededor de 1,7–2,3 segundos en el equipo local; deben medirse con usuarios simultáneos antes de decidir caché o procesamiento adicional. No se implementó caché que pueda devolver una revisión HIL desactualizada.
+
 En el avance HIL del 18/10 se registraron **32 pruebas backend y 13 frontend aprobadas**, compilación correcta, ensayo restaurado, aplicación secuencial y verificación de consultas. Los datos, fotos y filas ajenas a los objetivos quedaron protegidos. Estas pruebas no se presentan como una nueva auditoría integral de todos los módulos.
 
 Hay antecedentes de piloto PostgreSQL aislado y herramientas de reproducción del cálculo. Un piloto técnico con datos ficticios no mide adopción institucional ni la precisión del detector con casos humanos. Continúan pendientes el piloto con el personal y las mediciones contra evidencia independiente.

@@ -3,7 +3,7 @@ from typing import Any
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, VerificationError, InvalidHashError
-from jose import jwt, JWTError
+import jwt
 
 from app.core.config import settings
 
@@ -41,6 +41,7 @@ def create_access_token(subject: str | int, extra_claims: dict[str, Any] | None 
 def decode_access_token(token: str) -> dict[str, Any] | None:
     """Decodifica y valida un JWT. Devuelve None si es inválido o expiró."""
     try:
-        return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-    except JWTError:
+        return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM],
+                          options={"require": ["sub", "exp"]})
+    except jwt.InvalidTokenError:
         return None

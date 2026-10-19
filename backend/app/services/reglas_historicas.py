@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from statistics import median
 
 from sqlalchemy import func
+from sqlalchemy.orm import defer
 
 from app.models.activos import Activo
 from app.models.kardex import LoteCarga, MovimientoKardex
@@ -185,11 +186,23 @@ def evaluar(filas, config=None):
     return resultados
 
 
-def leer(db):
-    filas = db.query(MovimientoKardex, Activo, LoteCarga.tanda).join(
+def leer(db, *, articulo_id=None, articulo=None):
+    consulta = db.query(MovimientoKardex, Activo, LoteCarga.tanda).options(
+        defer(MovimientoKardex.datos_originales),
+    ).join(
         Activo, MovimientoKardex.articulo_id == Activo.id).join(
         LoteCarga, MovimientoKardex.lote_id == LoteCarga.id).filter(
-        MovimientoKardex.estado == 'ACTIVO').order_by(
+        MovimientoKardex.estado == 'ACTIVO')
+    if articulo_id is not None:
+        consulta = consulta.filter(MovimientoKardex.articulo_id == articulo_id)
+    if texto(articulo):
+        # Mismo casefold que el filtro público, también para tildes y Unicode.
+        # Se reduce por artículo completo; nunca por año antes de evaluar.
+        nombre = texto(articulo)
+        ids = [id for id, titulo, codigo in db.query(Activo.id, Activo.nombre, Activo.codigo)
+               if nombre in texto(titulo + ' ' + codigo)]
+        consulta = consulta.filter(MovimientoKardex.articulo_id.in_(ids))
+    filas = consulta.order_by(
         MovimientoKardex.articulo_id, MovimientoKardex.lote_id,
         func.coalesce(MovimientoKardex.orden_pagina_validado, MovimientoKardex.numero_pagina),
         MovimientoKardex.orden_fila, MovimientoKardex.id).all()

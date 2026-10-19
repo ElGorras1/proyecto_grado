@@ -159,6 +159,13 @@ def test_api_filtros_csv_evidencia_y_exclusion_de_modernos_y_anulados(
     assert moderno.id not in ids and anulado.id not in ids
     filtrado = client.get(url, headers=headers, params={'gestion':2025,'regla':'SALIDA_MAYORITARIA'}).json()
     assert filtrado['total'] == 1 and filtrado['filas'][0]['id'] == segundo.id
+    # Reducir por artículo no pierde el saldo anterior de otra gestión.
+    buscado = client.get(url, headers=headers, params={
+        'gestion': 2025, 'articulo': art.nombre.swapcase(), 'regla': 'SALIDA_MAYORITARIA'}).json()
+    assert buscado['total'] == filtrado['total']
+    assert buscado['filas'] == filtrado['filas']
+    assert client.get(url, headers=headers, params={
+        'articulo': '__sin coincidencias__', 'seleccion': 'todos'}).json()['total'] == 0
     assert client.get(url, headers=headers, params={'regla':'INVENTADA'}).status_code == 422
     detail = client.get(f'{url}/{segundo.id}', headers=headers).json()
     assert [f['id'] for f in detail['vecinos']] == [primero.id, segundo.id, tercero.id]

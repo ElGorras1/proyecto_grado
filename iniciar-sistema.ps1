@@ -10,7 +10,7 @@ if (-not (Test-Path -LiteralPath $python)) {
     throw 'Falta backend\.venv. Instala las dependencias del backend antes de iniciar.'
 }
 if (-not (Test-Path -LiteralPath $vite)) {
-    throw 'Faltan las dependencias del frontend. Ejecuta npm install en frontend.'
+    throw 'Faltan las dependencias del frontend. Ejecuta npm ci en frontend.'
 }
 if (-not (Test-Path -LiteralPath (Join-Path $backend '.env'))) {
     throw 'Falta backend\.env.'
@@ -39,7 +39,7 @@ if (-not (Get-NetTCPConnection -State Listen -LocalPort 5173 -ErrorAction Silent
 }
 
 $lista = @(
-    @{ Nombre = 'API'; Url = 'http://127.0.0.1:8000/health' },
+    @{ Nombre = 'API y conexión a la base'; Url = 'http://127.0.0.1:8000/health/ready' },
     @{ Nombre = 'Interfaz'; Url = 'http://localhost:5173/' }
 )
 foreach ($servicio in $lista) {

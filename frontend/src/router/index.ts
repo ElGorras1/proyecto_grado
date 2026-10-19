@@ -43,7 +43,7 @@ const router = createRouter({
     {
       path: '/admin',
       name: 'admin',
-      component: () => import('@/views/AdminView.vue'),
+      redirect: { name: 'usuarios' },
       meta: { roles: ['Administrador'] },
     },
     {

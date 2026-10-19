@@ -22,7 +22,7 @@ Seleccion = Literal['avisos', 'todos', 'sin_avisos', 'insuficiente']
 def seleccionadas(db, gestion, articulo, regla, seleccion):
     if regla and regla not in reglas.REGLAS:
         raise HTTPException(422, 'Selecciona una regla histórica válida.')
-    return reglas.filtrar(reglas.leer(db), gestion=gestion, articulo=articulo,
+    return reglas.filtrar(reglas.leer(db, articulo=articulo), gestion=gestion, articulo=articulo,
                           regla=regla, seleccion=seleccion)
 
 
@@ -81,12 +81,14 @@ def descargar(
 
 @router.get('/reglas-historicas/{movimiento_id}')
 def evidencia(movimiento_id: int, db: Session = Depends(get_db), _=Depends(lector)):
-    filas = reglas.leer(db)
+    m = db.get(MovimientoKardex, movimiento_id)
+    if m is None or m.lote_id is None or m.estado != "ACTIVO":
+        raise HTTPException(404, 'Movimiento histórico activo no encontrado.')
+    filas = reglas.leer(db, articulo_id=m.articulo_id)
     fila = next((f for f in filas if f['id'] == movimiento_id), None)
     if fila is None:
         raise HTTPException(404, 'Movimiento histórico activo no encontrado.')
     articulo = [f for f in filas if f['articulo_id'] == fila['articulo_id']]
     posicion = next(i for i, f in enumerate(articulo) if f['id'] == movimiento_id)
-    m = db.get(MovimientoKardex, movimiento_id)
     return {'fila': fila, 'politica': reglas.politica(), 'datos_originales': m.datos_originales,
             'vecinos': articulo[max(0, posicion-3):posicion+4]}

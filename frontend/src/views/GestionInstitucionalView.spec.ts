@@ -52,7 +52,7 @@ function montar() {
 describe('Gestión institucional', () => {
   it('mantiene el informe de la gestión consultada hasta confirmar otro año', async () => {
     const original = get.getMockImplementation()!
-    get.mockImplementation((url: string, opciones: any) =>
+    get.mockImplementation((url: string, opciones: { params: Record<string, string | number> }) =>
       url === '/reportes/institucional'
         ? Promise.resolve({
             data: {

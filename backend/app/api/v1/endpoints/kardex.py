@@ -1,20 +1,17 @@
 import os
-import shutil
 import uuid
-import io
 import hashlib
 import hmac
 import json
-from datetime import date, datetime, timedelta, UTC
+from datetime import datetime, timedelta, UTC
 from zoneinfo import ZoneInfo
 from typing import List, Optional, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, status, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Query
 from pydantic import AwareDatetime, BaseModel, Field, ConfigDict
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import func, or_, case, text
+from sqlalchemy import and_, func, or_, case, text
 from starlette.concurrency import run_in_threadpool
-from PIL import Image
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import get_db
@@ -110,7 +107,7 @@ def estado_solicitudes(
 # ============================================================
 
 class NuevoArticulo(BaseModel):
-    nombre: str
+    nombre: str = Field(min_length=1, max_length=150)
 
 
 class DecisionLote(BaseModel):
@@ -517,38 +514,37 @@ def crear_articulo(
     if not payload.nombre.strip():
         raise HTTPException(status_code=400, detail="El nombre del artículo no puede estar vacío")
 
-    cat = db.query(CategoriaActivo).filter(CategoriaActivo.nombre == "Digitalizados").first()
-    if not cat:
-        cat = CategoriaActivo(nombre="Digitalizados", descripcion="Artículos creados desde Kárdex Digital")
-        db.add(cat)
+    nombre = payload.nombre.strip().upper()
+    if len(nombre) > 150:
+        raise HTTPException(422, "El nombre normalizado supera los 150 caracteres")
+    try:
+        cat = db.query(CategoriaActivo).filter_by(nombre="Digitalizados").first()
+        if cat is None:
+            # La restricción única arbitra dos altas iniciales concurrentes.
+            try:
+                with db.begin_nested():
+                    cat = CategoriaActivo(nombre="Digitalizados", descripcion="Artículos creados desde Kárdex Digital")
+                    db.add(cat)
+                    db.flush()
+            except IntegrityError:
+                cat = db.query(CategoriaActivo).filter_by(nombre="Digitalizados").one()
+
+        nuevo_activo = Activo(categoria_id=cat.id, codigo=f"KDX-{uuid.uuid4().hex}",
+                              nombre=nombre, unidad_medida="unidad")
+        db.add(nuevo_activo)
+        db.flush()
+        registrar_evento_auditoria(
+            db, usuario_id=current_user.id, accion="crear_articulo", recurso="activo",
+            recurso_id=nuevo_activo.id, resultado="exito",
+            ip_origen=request.client.host if request.client else None,
+            detalle={"codigo": nuevo_activo.codigo, "nombre": nuevo_activo.nombre}, commit=False,
+        )
+        resultado = {"id": nuevo_activo.id, "nombre": nuevo_activo.nombre, "codigo": nuevo_activo.codigo}
         db.commit()
-        db.refresh(cat)
-    
-    import time
-    codigo_gen = f"KDX-{int(time.time())}"
-    
-    nuevo_activo = Activo(
-        categoria_id=cat.id,
-        codigo=codigo_gen,
-        nombre=payload.nombre.strip().upper(),
-        unidad_medida="unidad"
-    )
-    db.add(nuevo_activo)
-    db.commit()
-    db.refresh(nuevo_activo)
-    
-    registrar_evento_auditoria(
-        db,
-        usuario_id=current_user.id,
-        accion="crear_articulo",
-        recurso="activo",
-        recurso_id=nuevo_activo.id,
-        resultado="exito",
-        ip_origen=request.client.host if request.client else None,
-        detalle={"codigo": nuevo_activo.codigo, "nombre": nuevo_activo.nombre}
-    )
-    
-    return {"id": nuevo_activo.id, "nombre": nuevo_activo.nombre, "codigo": nuevo_activo.codigo}
+        return resultado
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.get("/articulos")
@@ -557,12 +553,15 @@ def get_articulos_typeahead(
     current_user: Usuario = Depends(get_current_user)
 ):
     """Listado de artículos con conteo de alertas y stock actual calculado."""
-    sum_rojas = func.sum(case((MovimientoKardex.tiene_error_saldo == True, 1), else_=0)).label('rojas')
-    sum_amarillas = func.sum(case((or_(
+    historico_activo = and_(MovimientoKardex.estado == "ACTIVO", MovimientoKardex.lote_id.isnot(None))
+    sum_rojas = func.sum(case((and_(historico_activo, MovimientoKardex.tiene_error_saldo.is_(True)), 1), else_=0)).label('rojas')
+    sum_amarillas = func.sum(case((and_(historico_activo, or_(
         MovimientoKardex.requiere_auditoria_nodo == True,
         MovimientoKardex.requiere_auditoria_referencia == True,
         MovimientoKardex.fecha_estado == "PENDIENTE_HIL",
-    ), 1), else_=0)).label('amarillas')
+        MovimientoKardex.area_estado.in_(ESTADOS_AREA_PENDIENTES),
+        MovimientoKardex.referencia_estado.in_(("ILEGIBLE", "INCIERTA")),
+    )), 1), else_=0)).label('amarillas')
     
     resultados = db.query(Activo.id, Activo.nombre, Activo.codigo, Activo.observacion_hil, sum_rojas, sum_amarillas)\
         .outerjoin(MovimientoKardex, Activo.id == MovimientoKardex.articulo_id)\
@@ -686,7 +685,8 @@ def get_grafo_articulo(
         func.sum(MovimientoKardex.ingresos).label("total_ingresos"),
         func.sum(MovimientoKardex.salidas).label("total_salidas")
     ).filter(
-        MovimientoKardex.articulo_id == articulo_id
+        MovimientoKardex.articulo_id == articulo_id,
+        MovimientoKardex.estado == "ACTIVO",
     ).group_by(
         MovimientoKardex.nodo_grafo,
         MovimientoKardex.area_estado,

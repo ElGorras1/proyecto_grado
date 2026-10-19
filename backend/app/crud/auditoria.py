@@ -16,6 +16,7 @@ def registrar_evento_auditoria(
     resultado: str,
     ip_origen: str | None,
     detalle: dict[str, Any] | None = None,
+    commit: bool = True,
 ) -> AuditoriaSistema:
     """Crea un registro en auditoria_sistema y lo persiste."""
     registro = AuditoriaSistema(
@@ -29,6 +30,9 @@ def registrar_evento_auditoria(
         detalle=detalle,
     )
     db.add(registro)
-    db.commit()
-    db.refresh(registro)
+    if commit:
+        db.commit()
+        db.refresh(registro)
+    else:
+        db.flush()
     return registro

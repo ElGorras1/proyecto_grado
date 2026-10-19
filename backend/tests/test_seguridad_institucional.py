@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from jose import jwt
+import jwt
 from test_analitica import cabecera
 
 from app.api import evidencia

@@ -1,6 +1,5 @@
 # === Migración histórica: preprocesamiento de imágenes ===
-opencv-python-headless==4.10.0.84
-pillow==10.4.0
+Pillow==13.0.0
 
 # === OCR/HTR ===
 # TrOCR (Transformer-based OCR) es el candidato mencionado en el documento

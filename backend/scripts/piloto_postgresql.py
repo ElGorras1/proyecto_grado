@@ -43,6 +43,7 @@ def main():
         raise RuntimeError("La inicialización no rechazó una base con tablas")
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], env=env, check=True)
     casos = [
+        "tests/test_auditoria_integral.py",
         "tests/test_apertura_inventario.py",
         "tests/test_conciliacion_inicial.py",
         "tests/test_transferencias_area.py",
@@ -75,13 +76,16 @@ def main():
             stdout=log,
             stderr=subprocess.STDOUT,
         )
-    intacto = original == snapshot_db(engine)
+    posterior = snapshot_db(engine)
+    cambios = sorted(k for k in original.keys() | posterior.keys() if original.get(k) != posterior.get(k))
+    intacto = not cambios
     reporte = dict(
         base_qa=nombre,
         esquema="Baseline congelado n49 y Alembic head",
         inicializacion_sobre_tablas_existentes="RECHAZADA",
         codigo_salida=resultado.returncode,
         base_institucional_intacta=intacto,
+        tablas_modificadas=cambios,
         pruebas=casos,
         limite="Datos ficticios; no sustituye el piloto con personal y conteos físicos reales.",
     )

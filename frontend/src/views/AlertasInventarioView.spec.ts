@@ -9,7 +9,8 @@ const { get, post, auth } = vi.hoisted(() => ({
 vi.mock('@/services/api', () => ({ default: { get, post } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
-let caso: any
+let caso: { estado: string; creado_en: string; historial: { total: number; filas: Record<string, unknown>[] };
+  [campo: string]: unknown }
 let vacio = false
 beforeEach(() => {
   auth.rol = 'Administrador'
@@ -192,7 +193,7 @@ describe('Bandeja de alertas operativas', () => {
     const w = await montar()
     await w.get('select[aria-label="Asignar a"]').setValue(2)
     await w.get('textarea').setValue('Revisión del acta y comprobación con el área')
-    post.mockImplementationOnce((_url: string, p: any) => {
+    post.mockImplementationOnce((_url: string, p: { motivo: string }) => {
       caso = {
         ...caso,
         estado: 'EN_REVISION',

@@ -37,6 +37,10 @@ __all__ = [
     "LotePendiente",
     "SolicitudCargaKardex",
     "MovimientoKardexArchivado",
+    "ModeloHistorico", "ResultadoHistorico", "RevisionHistorica",
+    "AperturaInventario", "ConciliacionInicial", "TransferenciaArea",
+    "CustodiaExterna", "EventoCustodiaExterna", "CoberturaArticulo", "TramoCobertura",
+    "CasoControl", "RevisionControl", "ModeloOperativo", "ResultadoOperativo", "CierreAnual",
 ]
 
 from app.models.auditoria_historica import ModeloHistorico, ResultadoHistorico, RevisionHistorica

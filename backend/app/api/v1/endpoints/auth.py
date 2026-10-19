@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.auth import LoginRequest, TokenResponse, UsuarioMe
-from app.crud.usuario import authenticate, registrar_login_exitoso, get_usuario_by_email
+from app.crud.usuario import registrar_login_exitoso, get_usuario_by_email
 from app.crud.auditoria import registrar_evento_auditoria
 from app.core.security import create_access_token, verify_password
 from app.api.deps import get_current_user, require_roles

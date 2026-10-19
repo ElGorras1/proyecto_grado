@@ -14,7 +14,6 @@ from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.activos import Activo
 from app.models.kardex import MovimientoKardex
-from app.services.clasificador_nodos import ESTADOS_AREA_PENDIENTES
 from app.services.calidad_kardex import pendiente_hil_sql, tipos_alerta
 
 router = APIRouter(prefix="/reportes", tags=["Reportes"])

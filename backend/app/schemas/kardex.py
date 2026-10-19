@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 
 class FilaKardex(BaseModel):
@@ -105,8 +105,16 @@ class MovimientoKardexOut(MovimientoKardexCreate):
     tanda: Optional[int] = Field(default=None, ge=1, le=9999)
     tratamiento_hil: Optional[dict] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("revision_documental")
+    def revision_vigente(self, revision: dict | None):
+        # La cadena completa permanece en la BD y en el historial de revisiones.
+        # Repetirla en cada fila de un listado aumenta el tráfico sin aportar
+        # información a la lectura vigente de la hoja.
+        if revision is None:
+            return None
+        return {k: v for k, v in revision.items() if k != "revision_previa_enmienda_focalizada"}
 
 
 class MovimientoKardexEdit(BaseModel):

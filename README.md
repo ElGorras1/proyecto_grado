@@ -81,6 +81,8 @@ Los tres pueden consultar inventario, Kárdex y evidencias. El servidor comprueb
 
 Arquitectura: Vue 3/TypeScript en frontend; FastAPI, SQLAlchemy y Alembic en backend; PostgreSQL; Gemini para extracción e Isolation Forest con scikit-learn. Los secretos y la conexión se configuran en `.env` fuera de Git.
 
+Entorno recomendado: Python 3.12 y Node 24; Node también admite 22.12 o posterior dentro de la versión 22. Las bibliotecas analíticas NumPy/scikit-learn conservan sus versiones para proteger la compatibilidad de los artefactos existentes. Para actualizar dependencias de una instalación existente, usar `python -m pip install -r requirements.txt` desde backend y `npm ci` desde frontend.
+
 Para iniciar la instalación existente, con PostgreSQL y dependencias preparados, desde la raíz:
 
 ```powershell
@@ -98,6 +100,31 @@ El [script de respaldo y recuperación](backend/scripts/respaldo_recuperacion.py
 La restauración comprobable crea otra base y otra carpeta de recuperación; no sustituye por sí sola la instalación actual. Para una base nueva existen inicialización protegida y creación interactiva del primer Administrador. Su uso no forma parte del inicio cotidiano.
 
 La implementación local y las pruebas previas no equivalen a aceptación institucional ni a certificación del despliegue público. La configuración final, recuperación del corte completo y piloto con el personal siguen documentados en los pendientes.
+
+## Auditoría integral del 18/10/2026
+
+Antes de cambiar el sistema se publicó el respaldo de código [respaldo/antes-auditoria-20261018](https://github.com/ElGorras1/proyecto_grado/tree/respaldo/antes-auditoria-20261018), commit `c5e9754`. Las mejoras se conservan en [auditoria/optimizacion-integral-20261018](https://github.com/ElGorras1/proyecto_grado/tree/auditoria/optimizacion-integral-20261018). La base, fotografías y modelos tienen respaldo local coherente y restaurado; no se publican en GitHub.
+
+- Se corrigieron códigos de artículos repetidos por altas en el mismo segundo y la persistencia de artículos sin su auditoría. También se validan los nombres contra el tamaño real de la columna.
+- El resumen de existencias respeta la apertura operativa y el cierre físico. Los contadores HIL y el grafo descartan filas anuladas o notas sin efecto; antes, 15 filas de esos estados podían sumar avisos en el catálogo.
+- La revisión de una regla histórica consulta el artículo completo, conservando antecedentes de otras gestiones. Los listados omiten la cadena redundante de revisiones previas; la evidencia completa permanece en la base y en las auditorías.
+- Se retiraron 30 archivos heredados sin uso, incluidas utilidades de borrado/cambios directos, un gráfico huérfano con sus cuatro pruebas, una pantalla administrativa de demostración y un esquema sin referencias. `/admin` conduce a la gestión real de usuarios. Se eliminaron dependencias sin uso y nueve importaciones innecesarias; los modelos necesarios para Alembic se conservaron.
+- El archivo JavaScript principal bajó de aproximadamente 303 a 160 KB, sin cambiar los estilos ni los controles utilizados. Las auditorías de paquetes finalizaron sin vulnerabilidades conocidas reportadas: antes había 98 avisos Python y 10 paquetes afectados en npm.
+- Hay comprobación de conexión en `/health/ready`, límites de configuración válidos, JWT con sujeto y caducidad obligatorios, restricciones para claves/CORS en producción, contextos Docker que excluyen datos y secretos, servicios locales limitados a localhost y verificación automática en GitHub.
+
+La base quedó en Alembic **`q72c31ed9f46`**, con dos índices nuevos para artículo/orden físico y lote. Se ensayaron aplicación, retirada y reaplicación sobre una restauración. Una consulta de cierre medida pasó de 5,329 a 0,047 ms; es una medición puntual, no una garantía de tiempo para todos los informes.
+
+Se conservaron los contenidos de las 43 tablas de negocio y todas las secuencias; solo cambió el registro de versión de Alembic. Se verificaron **926 archivos privados**, cero referencias huérfanas, cero posiciones históricas activas duplicadas y las dos distribuciones operativas existentes. Los 8.367 elegibles y los 116 tratamientos con marca permanecen iguales; esta auditoría no entrenó modelos ni modificó movimientos.
+
+Resultado de comprobaciones: **272 pruebas backend aprobadas, una omitida; 79 frontend; 101 del piloto PostgreSQL aislado; 66 consultas reales con respuesta esperada**, compilación y análisis estático sin errores. Las cuatro pruebas frontend retiradas pertenecían exclusivamente al componente huérfano. Persisten avisos de formato de Vue y una advertencia de compatibilidad futura del cliente de pruebas HTTP; no hubo fallos funcionales asociados.
+
+Los resultados detallados y el código retirado están en [el respaldo técnico de la auditoría](backend/backups/auditoria_integral_20261018/); el respaldo completo previo, en `backend/backups/respaldo_20261019T030623556491Z/` — fecha UTC, todavía 18/10 en Bolivia. Docker Compose se validó sintácticamente; no se certificó un despliegue público ni una prueba de carga concurrente.
+
+Para repetir el diagnóstico sin escribir en las tablas:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.auditar_sistema --salida backups/auditoria_actual.json
+```
 
 ## Conservación de la documentación anterior
 

@@ -43,7 +43,7 @@ describe('Reglas históricas', () => {
     const w=montar(); await flushPromises()
     const original=get.getMockImplementation()!
     let resolver!:(v:unknown)=>void
-    get.mockImplementation((url:string,opts:any)=>url.endsWith('/reglas-historicas') && opts.params.articulo==='Primero' && opts.params.pagina===1
+    get.mockImplementation((url:string,opts: { params: Record<string, string | number> })=>url.endsWith('/reglas-historicas') && opts.params.articulo==='Primero' && opts.params.pagina===1
       ? new Promise(r=>{resolver=r}) : original(url,opts))
     await w.get('[aria-label="Artículo de reglas históricas"]').setValue('  Primero  ')
     await w.get('form').trigger('submit')

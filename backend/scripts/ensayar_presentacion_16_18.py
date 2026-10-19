@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
-from jose import jwt
+import jwt
 from sqlalchemy import create_engine, text
 
 from app.db.session import engine, SessionLocal

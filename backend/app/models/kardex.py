@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, Text, ForeignKey, DateTime, Integer, Date, Boolean, UniqueConstraint, CheckConstraint
+from sqlalchemy import String, Text, ForeignKey, DateTime, Integer, Date, Boolean, UniqueConstraint, CheckConstraint, Index, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -66,6 +66,9 @@ class MovimientoKardexArchivado(Base):
 class MovimientoKardex(Base):
     __tablename__ = "movimientos_kardex"
     __table_args__ = (
+        Index("ix_kardex_articulo_orden", "articulo_id", "estado", "lote_id",
+              text("coalesce(orden_pagina_validado, numero_pagina)"), "orden_fila", "id"),
+        Index("ix_kardex_lote", "lote_id"),
         UniqueConstraint("solicitud_id", name="uq_movimiento_solicitud"),
         CheckConstraint("movimiento_origen_id IS NULL OR movimiento_origen_id <> id",
                         name="ck_movimiento_devolucion_no_reflexiva"),

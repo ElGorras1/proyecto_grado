@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.activos import Activo
+from app.models.inventario import AperturaInventario
 from app.models.kardex import MovimientoKardex as M, LoteCarga
 from app.services.calidad_kardex import pendiente_hil_sql
 from app.services.clasificador_nodos import ESTADOS_AREA_PENDIENTES
@@ -19,11 +20,22 @@ def resumen_dashboard(gestion: int = Query(..., ge=1900, le=2100),
     historico = M.lote_id.isnot(None)
     pendientes = pendiente_hil_sql()
     cantidad_articulos = db.query(func.count(Activo.id)).scalar()
-    ultimos = db.query(M.articulo_id, func.max(M.id).label("id")).filter(activo).group_by(M.articulo_id).subquery()
+    # La apertura ya incorpora ajustes modernos. Sin ella, usar la última
+    # operación digital o el cierre físico; un ID de importación no es un cierre.
+    ranking = db.query(M.id.label("id"), M.articulo_id.label("articulo_id"),
+        func.row_number().over(partition_by=M.articulo_id, order_by=(
+            case((M.lote_id.is_(None), 1), else_=0).desc(), M.lote_id.desc(),
+            func.coalesce(M.orden_pagina_validado, M.numero_pagina).desc(),
+            M.orden_fila.desc(), M.id.desc(),
+        )).label("orden")).filter(activo).subquery()
+    ultimos = db.query(ranking.c.id, ranking.c.articulo_id).filter(ranking.c.orden == 1).subquery()
+    saldo_actual = func.coalesce(AperturaInventario.cantidad_actual, M.saldo_registrado)
     stock, con_movimiento, sin_stock = db.query(
-        func.coalesce(func.sum(M.saldo_registrado), 0), func.count(M.id),
-        func.coalesce(func.sum(case((M.saldo_registrado <= 0, 1), else_=0)), 0),
-    ).join(ultimos, ultimos.c.id == M.id).one()
+        func.coalesce(func.sum(saldo_actual), 0), func.count(saldo_actual),
+        func.coalesce(func.sum(case((saldo_actual <= 0, 1), else_=0)), 0),
+    ).select_from(Activo).outerjoin(ultimos, ultimos.c.articulo_id == Activo.id).outerjoin(
+        M, ultimos.c.id == M.id).outerjoin(
+        AperturaInventario, AperturaInventario.articulo_id == Activo.id).one()
     calidad = db.query(
         func.count(M.id),
         func.coalesce(func.sum(case((pendientes, 1), else_=0)), 0),

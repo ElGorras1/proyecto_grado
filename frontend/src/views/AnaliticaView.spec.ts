@@ -58,7 +58,7 @@ describe('Auditoría histórica', () => {
     await flushPromises()
     const original = get.getMockImplementation()!
     let resolver!: (v: unknown) => void
-    get.mockImplementation((url: string, opciones: any) =>
+    get.mockImplementation((url: string, opciones: { params: Record<string, string | number> }) =>
       url === '/analitica/resultados' && opciones.params.articulo === 'Primero'
         ? new Promise((resolve) => {
             resolver = resolve
