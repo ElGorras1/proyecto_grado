@@ -10,12 +10,16 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
-import msvcrt
 import os
 import time
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 import httpx
 from PIL import Image
@@ -82,7 +86,7 @@ def preparar_plan(root: Path, tanda: int) -> list[dict]:
 
 @contextmanager
 def importador_unico():
-    """Bloqueo del proceso, liberado por Windows también tras un cierre abrupto."""
+    """Bloqueo exclusivo del sistema operativo, también en contenedores Linux."""
     ruta = BACKEND / "logs" / "importacion_kardex.lock"
     ruta.parent.mkdir(exist_ok=True)
     with ruta.open("a+b") as f:
@@ -91,14 +95,20 @@ def importador_unico():
             f.flush()
         f.seek(0)
         try:
-            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            if os.name == "nt":
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as e:
             raise RuntimeError("Otro importador tiene el bloqueo; no iniciar en paralelo") from e
         try:
             yield
         finally:
             f.seek(0)
-            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            if os.name == "nt":
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 class API:

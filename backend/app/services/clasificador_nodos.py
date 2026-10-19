@@ -1,8 +1,11 @@
 from dataclasses import dataclass
+import logging
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from thefuzz import fuzz
+
+logger = logging.getLogger(__name__)
 
 UMBRAL_FUZZY = 80
 
@@ -206,12 +209,13 @@ def _resolver_area_con_catalogo(
                         ),
                         {"texto": texto_area, "area_id": mejor_id},
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("No se guardó la sugerencia de área; requiere revisión (%s)", type(exc).__name__)
             return f"Área: {mejor_area}", AREA_PENDIENTE_HIL, True
 
         return NODO_AREA_NO_CATALOGADA, AREA_NO_CATALOGADA, True
-    except Exception:
+    except Exception as exc:
+        logger.warning("Catálogo de áreas no disponible; clasificación pendiente HIL (%s)", type(exc).__name__)
         return NODO_PENDIENTE_CLASIFICACION, AREA_PENDIENTE_HIL, True
 
 

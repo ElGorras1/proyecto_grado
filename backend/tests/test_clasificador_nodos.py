@@ -105,3 +105,16 @@ def test_normaliza_etiquetas_legacy_segun_direccion_del_movimiento():
         False,
     )
     assert normalizar_nodo_grafo("Salida: Ventas") == ("Salida: Ventas", False)
+
+
+def test_fallo_catalogo_queda_pendiente_y_se_registra_sin_datos_privados(caplog):
+    from sqlalchemy.exc import SQLAlchemyError
+    class CatalogoNoDisponible:
+        def execute(self, *args, **kwargs):
+            raise SQLAlchemyError("contenido institucional privado")
+    c = clasificar_movimiento(detalle="Entrega", ref=None, area="UNIDAD",
+                             ingreso=None, salida=1, db=CatalogoNoDisponible())
+    assert c.area_estado == AREA_PENDIENTE_HIL
+    assert c.requiere_auditoria_nodo
+    assert "clasificación pendiente HIL" in caplog.text
+    assert "contenido institucional privado" not in caplog.text

@@ -2,6 +2,8 @@ import argparse
 import csv
 import hashlib
 import json
+import subprocess
+import sys
 
 import httpx
 import pytest
@@ -161,6 +163,25 @@ def test_otro_importador_no_puede_tomar_el_bloqueo(tmp_path, monkeypatch):
         with pytest.raises(RuntimeError, match="Otro importador"):
             with imp.importador_unico():
                 pass
+
+
+def test_bloqueo_entre_procesos_y_liberacion_tras_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(imp, "BACKEND", tmp_path)
+    codigo = (
+        "import sys; from pathlib import Path; from scripts import importar_tanda as imp; "
+        "imp.BACKEND=Path(sys.argv[1]); "
+        "\nwith imp.importador_unico(): pass"
+    )
+    def hijo():
+        return subprocess.run([sys.executable, "-c", codigo, str(tmp_path)],
+                              capture_output=True, text=True)
+    with pytest.raises(RuntimeError, match="interrupción simulada"):
+        with imp.importador_unico():
+            bloqueado = hijo()
+            assert bloqueado.returncode != 0
+            assert "Otro importador" in bloqueado.stderr
+            raise RuntimeError("interrupción simulada")
+    assert hijo().returncode == 0
 
 
 def test_descartados_y_divididos_no_se_vuelven_a_cargar(tmp_path, monkeypatch):
