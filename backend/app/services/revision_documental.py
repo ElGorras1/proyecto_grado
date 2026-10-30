@@ -5,6 +5,7 @@ from sqlalchemy import func
 from app.models.auditoria import AuditoriaSistema
 from app.models.kardex import MovimientoKardex
 from app.services.calidad_kardex import snapshot_original
+from app.services.fechas_documentales import ESTADOS_INCOMPLETOS, fecha_asignable
 
 CAMPOS_EDITABLES = {"ingresos", "salidas", "saldo_registrado", "fecha_movimiento", "area", "detalle",
                     "referencia", "referencia_estado", "requiere_auditoria_referencia",
@@ -95,9 +96,9 @@ def recalcular_revision(movimientos):
             m.saldo_registrado = esperado
         m.saldo_calculado = esperado
         m.tiene_error_saldo = esperado != m.saldo_registrado
-        retroceso = bool(fecha and m.fecha_movimiento < fecha)
-        m.tiene_error_fecha = retroceso or bool(rev.get("fecha_documental_fuera_orden"))
-        if m.fecha_estado not in {"CONFIRMADA_DOCUMENTO", "ESTIMADA_HIL"}:
+        retroceso = bool(fecha and m.fecha_movimiento and m.fecha_movimiento < fecha)
+        m.tiene_error_fecha = m.fecha_movimiento is None or retroceso or bool(rev.get("fecha_documental_fuera_orden"))
+        if m.fecha_estado not in {"CONFIRMADA_DOCUMENTO", "ESTIMADA_HIL", *ESTADOS_INCOMPLETOS}:
             if retroceso:
                 m.fecha_estado = "PENDIENTE_HIL"
             elif m.fecha_estado == "PENDIENTE_HIL":
@@ -108,7 +109,8 @@ def recalcular_revision(movimientos):
                 rev["diferencia_saldo_documental"] = documental - esperado
             m.revision_documental = rev
         saldo = esperado if reconstruir else m.saldo_registrado
-        fecha = m.fecha_movimiento
+        if fecha_asignable(m):
+            fecha = m.fecha_movimiento
 
 def registrar_revision(db, m, anterior, *, criterio_sha256, motivo, usuario_id=None):
     nuevo = snapshot_revision(m)

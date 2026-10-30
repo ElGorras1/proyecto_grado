@@ -424,7 +424,7 @@ onUnmounted(() => {
             </thead>
             <tbody>
               <tr v-for="(g, anio) in perfil.por_gestion" :key="anio">
-                <td>{{ anio }}</td>
+                <td>{{ anio === 'SIN_GESTION_CONFIRMADA' ? 'Sin gestión confirmada' : anio }}</td>
                 <td>{{ g.disponibles }}</td>
                 <td>{{ g.elegibles }}</td>
               </tr>

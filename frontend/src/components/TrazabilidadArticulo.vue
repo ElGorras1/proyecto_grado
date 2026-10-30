@@ -16,6 +16,8 @@ interface Evento {
   saldo_institucional?: number; saldo_documental?: number;
   lote_id?: number; tanda?: number; pagina?: number; fila?: number;
   fecha_estado?: string; area_estado?: string; referencia_estado?: string;
+  area_documental?: string | null; asignacion_area?: { area: string; motivo: string } | null;
+  fecha_documental_texto?: string | null; fecha_precision?: string | null; fecha_consulta_tecnica?: string | null;
   afecta_stock_actual: boolean; estado: string;
   alertas_control?: { codigo: string; mensaje: string }[] | null;
   justificacion_alertas?: string | null;
@@ -28,7 +30,10 @@ interface Datos {
   integridad_libro: boolean | null;
 }
 const props = withDefaults(defineProps<{ articuloId: number; ambitoInicial?: string }>(), { ambitoInicial: 'TODOS' })
-const filtros = ref({ ambito: props.ambitoInicial, desde: '', hasta: '', ubicacion: '', tanda: '', relacion: '' })
+const filtros = ref({ ambito: props.ambitoInicial, desde: '', hasta: '', ubicacion: '', tanda: '', relacion: '', sin_fecha: '' })
+watch(() => filtros.value.sin_fecha, valor => {
+  if (valor) { filtros.value.desde = ''; filtros.value.hasta = '' }
+})
 const tandas = ref([1, 2, 3])
 onMounted(async () => {
   try {
@@ -87,7 +92,7 @@ async function cargar(reiniciar = false) {
 }
 function pagina(delta: number) { offset.value = Math.max(0, offset.value + delta * limite); cargar() }
 function verImagen(ruta: string) { errorImagen.value = false; imagen.value = ruta }
-watch(() => props.articuloId, () => { filtros.value = { ambito: props.ambitoInicial, desde: '', hasta: '', ubicacion: '', tanda: '', relacion: '' }; cargar(true) }, { immediate: true })
+watch(() => props.articuloId, () => { filtros.value = { ambito: props.ambitoInicial, desde: '', hasta: '', ubicacion: '', tanda: '', relacion: '', sin_fecha: '' }; cargar(true) }, { immediate: true })
 onBeforeUnmount(() => controlador?.abort())
 </script>
 
@@ -96,9 +101,10 @@ onBeforeUnmount(() => controlador?.abort())
     <h3>Trazabilidad por artículo</h3>
     <p>Selecciona un evento para consultar sus ubicaciones, vínculos y respaldo. El Kárdex escaneado conserva el registro de auditoría.</p>
     <form class="filtros" @submit.prevent="cargar(true)">
+      <label>Fechas<select v-model="filtros.sin_fecha" aria-label="Fechas de trazabilidad"><option value="">Todas</option><option value="true">Sin fecha confirmada</option></select></label>
       <label>Registros<select v-model="filtros.ambito" aria-label="Ámbito de trazabilidad"><option value="TODOS">Histórico y operativo</option><option value="HISTORICO">Kárdex escaneado</option><option value="OPERATIVO">Inventario vivo y antecedentes</option></select></label>
-      <label>Desde<input v-model="filtros.desde" aria-label="Fecha desde" type="date" /></label>
-      <label>Hasta<input v-model="filtros.hasta" aria-label="Fecha hasta" type="date" /></label>
+      <label>Desde<input v-model="filtros.desde" aria-label="Fecha desde" type="date" :disabled="!!filtros.sin_fecha" /></label>
+      <label>Hasta<input v-model="filtros.hasta" aria-label="Fecha hasta" type="date" :disabled="!!filtros.sin_fecha" /></label>
       <label>Área o referencia<select v-model="filtros.ubicacion" aria-label="Ubicación de trazabilidad"><option value="">Todas</option><option v-for="u in datos?.ubicaciones ?? []" :key="u.id" :value="u.id">{{ u.label }}</option></select></label>
       <label v-if="filtros.ambito === 'HISTORICO'">Tanda<select v-model="filtros.tanda" aria-label="Tanda de trazabilidad"><option value="">Todas</option><option v-for="n in tandas" :key="n" :value="String(n)">Tanda {{ n }}</option></select></label>
       <label>Ubicación del evento<select v-model="filtros.relacion" aria-label="Confirmación de relación"><option value="">Todos</option><option value="CONFIRMADA">Confirmada en el registro</option><option value="PENDIENTE">Con datos por confirmar</option></select></label>
@@ -126,7 +132,11 @@ onBeforeUnmount(() => controlador?.abort())
           <article v-if="detalle" class="detalle" aria-label="Detalle de trazabilidad">
             <h4>{{ detalle.clase }} #{{ detalle.id }}</h4>
             <p>{{ detalle.descripcion }}</p>
+            <p v-if="detalle.asignacion_area"><strong>Área inferida: {{ detalle.asignacion_area.area }}.</strong>
+              Lectura conservada: {{ detalle.area_documental || 'Sin texto' }}. {{ detalle.asignacion_area.motivo }}</p>
             <p>Fecha del evento: {{ fecha(detalle.fecha) }}<span v-if="detalle.fecha_estado"> · {{ detalle.fecha_estado }}</span></p>
+            <p v-if="detalle.fecha_documental_texto">Fecha escrita: {{ detalle.fecha_documental_texto }}</p>
+            <p v-if="detalle.fecha_consulta_tecnica">Fecha técnica conservada: {{ detalle.fecha_consulta_tecnica }}. No acredita la fecha del hecho.</p>
             <p>Registro: {{ fecha(detalle.fecha_registro) }} · Estado: {{ detalle.estado }}</p>
             <p>Cantidad registrada: {{ detalle.cantidad }} u. · Ingreso: {{ detalle.ingreso }} · Salida: {{ detalle.salida }}</p>
             <p v-if="detalle.clase === 'BASE'">Base fijada para el inventario vivo.</p>

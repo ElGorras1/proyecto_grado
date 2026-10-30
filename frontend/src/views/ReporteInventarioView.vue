@@ -7,7 +7,7 @@ type Origen = 'todos' | 'historico' | 'moderno'
 type Direccion = 'todas' | 'ingreso' | 'salida'
 type Revision = 'todas' | 'pendiente' | 'sin_alertas'
 interface Filtros {
-  gestion: number
+  gestion: number | ''
   mes: number | ''
   articulo: string
   origen: Origen
@@ -17,7 +17,9 @@ interface Filtros {
 }
 interface Fila {
   id: number
-  fecha: string
+  fecha: string | null
+  fecha_documental_texto?: string | null
+  fecha_precision?: string | null
   fecha_original: string | null
   fecha_estado: string
   origen_fecha?: string
@@ -39,7 +41,7 @@ interface Fila {
   pendiente_hil: boolean
 }
 interface Reporte {
-  gestion: number
+  gestion: number | null
   resumen: {
     movimientos: number
     articulos: number
@@ -93,6 +95,7 @@ const filtros = ref<Filtros>({
 const aplicados = ref<Filtros | null>(null)
 const reporte = ref<Reporte | null>(null)
 const cargando = ref(false)
+const cargandoOpciones = ref(true)
 const exportando = ref(false)
 const error = ref('')
 const maximoMensual = computed(() =>
@@ -104,12 +107,12 @@ const totalPaginas = computed(() =>
 
 function parametros(f: Filtros): Record<string, string | number> {
   const p: Record<string, string | number> = {
-    gestion: f.gestion,
     origen: f.origen,
     direccion: f.direccion,
     revision: f.revision,
   }
-  if (f.mes) p.mes = f.mes
+  if (f.gestion !== '') p.gestion = f.gestion
+  if (f.mes && f.gestion !== '') p.mes = f.mes
   if (f.articulo.trim()) p.articulo = f.articulo.trim()
   if (f.nodo) p.nodo = f.nodo
   return p
@@ -145,7 +148,7 @@ async function descargarCsv() {
     const url = URL.createObjectURL(new Blob([data], { type: 'text/csv;charset=utf-8' }))
     const enlace = document.createElement('a')
     enlace.href = url
-    enlace.download = `reporte_inventario_${aplicados.value.gestion}.csv`
+    enlace.download = `reporte_inventario_${aplicados.value.gestion || 'sin_gestion_confirmada'}.csv`
     document.body.appendChild(enlace)
     enlace.click()
     enlace.remove()
@@ -171,6 +174,8 @@ onMounted(async () => {
     await cargarReporte(1, true)
   } catch {
     error.value = 'No se pudieron cargar las gestiones disponibles.'
+  } finally {
+    cargandoOpciones.value = false
   }
 })
 
@@ -197,14 +202,15 @@ const numero = (n: number) => new Intl.NumberFormat('es-BO').format(n)
     <form class="filtros" @submit.prevent="cargarReporte(1, true)">
       <label
         >Gestión
-        <select v-model.number="filtros.gestion" required aria-label="Gestión">
+        <select v-model.number="filtros.gestion" aria-label="Gestión" :disabled="cargandoOpciones">
+          <option value="">Sin gestión confirmada</option>
           <option v-for="g in gestiones" :key="g" :value="g">{{ g }}</option>
           <option v-if="!gestiones.length" :value="filtros.gestion">{{ filtros.gestion }}</option>
         </select>
       </label>
       <label
         >Mes
-        <select v-model="filtros.mes">
+        <select v-model="filtros.mes" :disabled="filtros.gestion === ''">
           <option value="">Todo el año</option>
           <option v-for="(nombre, index) in nombresMes" :key="index" :value="index + 1">
             {{ nombre }}
@@ -251,16 +257,15 @@ const numero = (n: number) => new Intl.NumberFormat('es-BO').format(n)
           <option value="sin_alertas">Sin alertas HIL</option>
         </select>
       </label>
-      <button type="submit" class="consultar" :disabled="cargando">
+      <button type="submit" class="consultar" :disabled="cargando || cargandoOpciones">
         {{ cargando ? 'Consultando…' : 'Aplicar filtros' }}
       </button>
     </form>
 
     <p class="nota">
-      La gestión se determina por la <strong>fecha de consulta del movimiento</strong>: inicialmente
-      es la escrita en el Kárdex, y puede corregirse con evidencia conservando la fecha original.
-      Este reporte suma movimientos; no representa existencias al cierre de año. Las fechas
-      pendientes de HIL se identifican en el detalle.
+      La gestión anual incluye fechas completas con procedencia documental. Las fechas técnicas,
+      ausentes o parciales se consultan en <strong>Sin gestión confirmada</strong>, conservando
+      la primera lectura y el estado HIL. Este reporte suma movimientos; no representa existencias al cierre de año.
     </p>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
 
@@ -292,7 +297,7 @@ const numero = (n: number) => new Intl.NumberFormat('es-BO').format(n)
         </div>
       </section>
 
-      <section class="panel" aria-label="Distribución mensual">
+      <section v-if="reporte.gestion !== null" class="panel" aria-label="Distribución mensual">
         <div class="panel-titulo">
           <h2>Movimiento mensual · {{ reporte.gestion }}</h2>
           <span
@@ -345,13 +350,15 @@ const numero = (n: number) => new Intl.NumberFormat('es-BO').format(n)
             <tbody>
               <tr v-for="fila in reporte.filas" :key="fila.id">
                 <td class="sin-salto">
-                  {{ fila.fecha
+                  {{ fila.fecha || 'Sin fecha completa'
                   }}<small v-if="fila.fecha_estado === 'ESTIMADA_HIL'">Fecha estimada · {{ fila.origen_fecha }}</small><small v-else-if="fila.fecha_estado === 'PENDIENTE_HIL'">Fecha pendiente HIL</small
                   ><small v-else-if="fila.fecha_estado === 'CONFIRMADA_DOCUMENTO'"
                     >Confirmada en documento</small
                   ><small v-if="fila.fecha_original && fila.fecha_original !== fila.fecha"
                     >Original: {{ fila.fecha_original }}</small
                   >
+                  <small v-if="fila.fecha_documental_texto">Escrito: {{ fila.fecha_documental_texto }}</small>
+                  <small v-if="!fila.fecha">{{ fila.fecha_precision || 'Fecha ausente' }}</small>
                 </td>
                 <td>
                   <strong>{{ fila.articulo }}</strong

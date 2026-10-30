@@ -47,13 +47,16 @@ def huella(valor):
 def snapshot(m, a):
     dato = {k: getattr(m, k) for k in CAMPOS}
     dato.update(
-        fecha=m.fecha_movimiento.isoformat(),
+        fecha=m.fecha_movimiento.isoformat() if m.fecha_movimiento else None,
         fecha_original=m.fecha_original.isoformat() if m.fecha_original else None,
         articulo=a.nombre,
         codigo=a.codigo,
         observacion_articulo_hil=a.observacion_hil,
         alertas_hil=tipos_alerta(m),
     )
+    for campo in ("fecha_documental_texto", "fecha_precision"):
+        if getattr(m, campo, None) is not None:
+            dato[campo] = getattr(m, campo)
     return dato
 
 
@@ -72,8 +75,10 @@ def leer_corte(db, excluir_articulos=()):
     ids = {f["id"] for f in elegibles}
     for f in filas:
         if f["lote_id"] is not None and f["estado"] == "ACTIVO":
-            cobertura[f["fecha"][:4]]["disponibles"] += 1
-            cobertura[f["fecha"][:4]]["elegibles"] += int(f["id"] in ids)
+            rev = f.get("revision_documental") or {}
+            gestion = f["fecha"][:4] if f["fecha"] and f["fecha_estado"] != "ESTIMADA_HIL" and rev.get("origen_fecha") not in {"HIPOTESIS", "SECUENCIA_AJUSTADA"} else "SIN_GESTION_CONFIRMADA"
+            cobertura[gestion]["disponibles"] += 1
+            cobertura[gestion]["elegibles"] += int(f["id"] in ids)
             articulos[f["articulo_id"]]["disponibles"] += 1
             articulos[f["articulo_id"]]["elegibles"] += int(f["id"] in ids)
             articulos[f["articulo_id"]]["nombre"] = f["articulo"]
@@ -110,6 +115,8 @@ def seleccionar(filas, excluir_articulos=()):
             razon = "anulados"
         elif f["lote_id"] is None:
             razon = "modernos"
+        elif not f.get("fecha"):
+            razon = "fecha_no_documentada"
         elif (f.get("observacion_articulo_hil") or {}).get("excluir_entrenamiento"):
             razon = "articulos_observados_hil"
         elif (f.get("revision_documental") or {}).get("origen_cantidades") == "HIPOTESIS":

@@ -1,8 +1,8 @@
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import KardexContinuoView from './KardexContinuoView.vue'
-const { get, post, auth } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), auth: { rol: 'Administrador' } }))
-vi.mock('@/services/api', () => ({ default: { get, post, defaults: { baseURL: 'http://localhost:8000/api/v1' } } }))
+const { get, post, put, auth } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), auth: { rol: 'Administrador' } }))
+vi.mock('@/services/api', () => ({ default: { get, post, put, defaults: { baseURL: 'http://localhost:8000/api/v1' } } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
 const filas = [1, 2].map(tanda => ({ id: tanda, lote_id: tanda, tanda, fecha_movimiento: '2025-01-01', detalle: `Documento tanda ${tanda}`, ingresos: 5, salidas: null, saldo_registrado: 5, tiene_error_saldo: true, tipos_alerta: ['saldo'], numero_pagina: 1 }))
@@ -23,6 +23,42 @@ async function montar() {
  return w
 }
 describe('Archivo por tandas', () => {
+ it('exige fila y cotejo explícito, y envía la versión de evidencia leída', async () => {
+   const anterior = get.getMockImplementation()!
+   get.mockImplementation((url: string) => {
+     if (url === '/kardex/cobertura/1') return Promise.resolve({ data: {
+       huella_fuente: 'a'.repeat(64),
+       fuente_cierre: { estado: 'PROPUESTA', seleccion: null, propuesta: null },
+       candidatos_cierre: [{ movimiento_id: 10, lote_id: 2, pagina: 1, orden_pagina: 1,
+         fila: 3, fecha_ocr: '2024-12-31', saldo_documental: 8, ruta_imagen_respaldo: 'storage/hoja.png' }],
+       evidencia_disponible: { lotes: [], gestiones_con_filas: [], paginas_con_filas: 1, movimientos: 1 },
+       continuidad: { orden: 'lote, hoja y fila', cierre_disponible: null, interrupciones_entre_lotes: [] },
+       revision: { estado: 'SIN_CONFIRMAR', referencia: null, observacion: '', vigente: false, revisado_en: null },
+       tramos: [],
+     } })
+     return anterior(url)
+   })
+   put.mockResolvedValue({ data: {} })
+   const w = await montar()
+   await w.findAll('.tabs .tab-btn').find(b => b.text().includes('Cobertura'))!.trigger('click')
+   await flushPromises()
+   const estado = w.findAll('select').find(s => s.find('option[value="CIERRE_CONFIRMADO"]').exists())!
+   await estado.setValue('CIERRE_CONFIRMADO')
+   const guardar = () => w.findAll('button').find(b => b.text() === 'Guardar revisión')!
+   expect(guardar().attributes('disabled')).toBeDefined()
+   await w.get('#fila-cierre').setValue(10)
+   expect(w.text()).toContain('Ver foto de la fila seleccionada')
+   expect(guardar().attributes('disabled')).toBeDefined()
+   const checkbox = w.findAll('input[type="checkbox"]').find(i => i.element.parentElement?.textContent?.includes('Revisé la foto'))!
+   await checkbox.setValue(true)
+   expect(guardar().attributes('disabled')).toBeUndefined()
+   await guardar().trigger('click'); await flushPromises()
+   expect(put).toHaveBeenCalledWith('/kardex/cobertura/1/revision', expect.objectContaining({
+     cierre_movimiento_id: 10, huella_fuente_esperada: 'a'.repeat(64), evidencia_revisada: true,
+   }))
+   expect(w.find('#fila-cierre').exists()).toBe(false)
+   w.unmount()
+ })
  it('distingue avisos categorizados y filtra por su tratamiento sin ocultarlos por defecto', async () => {
    const anterior = get.getMockImplementation()!
    get.mockImplementation((url: string) => {

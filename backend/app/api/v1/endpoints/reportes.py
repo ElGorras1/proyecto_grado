@@ -5,7 +5,7 @@ import io
 from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import case, distinct, func, or_
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from app.db.session import get_db
 from app.models.activos import Activo
 from app.models.kardex import MovimientoKardex
 from app.services.calidad_kardex import pendiente_hil_sql, tipos_alerta
+from app.services.fechas_documentales import fecha_asignable_sql, datos_fecha
 
 router = APIRouter(prefix="/reportes", tags=["Reportes"])
 
@@ -24,15 +25,20 @@ def _pendiente_hil():
 
 
 def _consulta(db, gestion, mes, articulo, origen, direccion, nodo, revision):
-    inicio = date(gestion, mes or 1, 1)
-    fin = date(gestion + 1, 1, 1) if not mes or mes == 12 else date(gestion, mes + 1, 1)
+    if gestion is None and mes is not None:
+        raise HTTPException(422, "Selecciona una gestión confirmada antes de filtrar por mes")
     consulta = db.query(MovimientoKardex, Activo).join(
         Activo, Activo.id == MovimientoKardex.articulo_id
     ).filter(
-        MovimientoKardex.fecha_movimiento >= inicio,
-        MovimientoKardex.fecha_movimiento < fin,
         MovimientoKardex.estado == "ACTIVO",
     )
+    if gestion is None:
+        consulta = consulta.filter(~fecha_asignable_sql())
+    else:
+        inicio = date(gestion, mes or 1, 1)
+        fin = date(gestion + 1, 1, 1) if not mes or mes == 12 else date(gestion, mes + 1, 1)
+        consulta = consulta.filter(fecha_asignable_sql(), MovimientoKardex.fecha_movimiento >= inicio,
+                                   MovimientoKardex.fecha_movimiento < fin)
     if articulo:
         termino = f"%{articulo.strip()}%"
         consulta = consulta.filter(or_(Activo.nombre.ilike(termino), Activo.codigo.ilike(termino)))
@@ -57,7 +63,8 @@ def _fila(mov, activo):
     rev = mov.revision_documental or {}
     return {
         "id": mov.id,
-        "fecha": mov.fecha_movimiento.isoformat(),
+        "fecha": mov.fecha_movimiento.isoformat() if mov.fecha_movimiento else None,
+        **datos_fecha(mov),
         "fecha_original": mov.fecha_original.isoformat() if mov.fecha_original else None,
         "fecha_estado": mov.fecha_estado,
         "tipos_alerta": tipos_alerta(mov),
@@ -90,19 +97,20 @@ def opciones_reporte(
     _usuario=Depends(get_current_user),
 ):
     activos = MovimientoKardex.estado == "ACTIVO"
-    fechas = db.query(MovimientoKardex.fecha_movimiento).filter(activos).distinct().all()
+    fechas = db.query(MovimientoKardex.fecha_movimiento).filter(activos, fecha_asignable_sql()).distinct().all()
     nodos = db.query(distinct(MovimientoKardex.nodo_grafo)).filter(
         activos, MovimientoKardex.nodo_grafo.isnot(None)
     ).all()
     return {
         "gestiones": sorted({fecha.year for (fecha,) in fechas if fecha}, reverse=True),
         "nodos": sorted(n[0] for n in nodos if n[0]),
+        "sin_gestion_confirmada": db.query(MovimientoKardex).filter(activos, ~fecha_asignable_sql()).count(),
     }
 
 
 @router.get("/inventario")
 def reporte_inventario(
-    gestion: int = Query(..., ge=1900, le=2100),
+    gestion: int | None = Query(None, ge=1900, le=2100),
     mes: int | None = Query(None, ge=1, le=12),
     articulo: str | None = Query(None, max_length=150),
     origen: Literal["todos", "historico", "moderno"] = "todos",
@@ -139,7 +147,7 @@ def reporte_inventario(
         func.coalesce(func.sum(subconsulta.c.ingresos), 0),
         func.coalesce(func.sum(subconsulta.c.salidas), 0),
     ).group_by(func.extract("month", subconsulta.c.fecha)).all()
-    meses = {int(m): (int(c), int(i), int(s)) for m, c, i, s in por_mes}
+    meses = {int(m): (int(c), int(i), int(s)) for m, c, i, s in por_mes if m is not None and gestion is not None}
     filas = consulta.order_by(
         MovimientoKardex.fecha_movimiento.asc(), MovimientoKardex.id.asc()
     ).offset((pagina - 1) * limite).limit(limite).all()
@@ -176,7 +184,7 @@ def _celda_csv(valor):
 
 @router.get("/inventario.csv")
 def exportar_inventario(
-    gestion: int = Query(..., ge=1900, le=2100),
+    gestion: int | None = Query(None, ge=1900, le=2100),
     mes: int | None = Query(None, ge=1, le=12),
     articulo: str | None = Query(None, max_length=150),
     origen: Literal["todos", "historico", "moderno"] = "todos",
@@ -197,6 +205,7 @@ def exportar_inventario(
             "Página", "Fila", "Detalle", "Referencia", "Área original", "Nodo",
             "Tipo de operación", "Ingresos", "Salidas", "Pendiente HIL",
             "Origen fecha", "Origen saldo", "Saldo documental cotejado", "Saldo vigente", "Saldo esperado", "Hallazgos conservados",
+            "Fecha escrita", "Precisión fecha", "Gestión confirmada",
         ])
         yield buffer.getvalue()
         buffer.seek(0)
@@ -208,6 +217,7 @@ def exportar_inventario(
                 "pagina", "orden_fila", "detalle", "referencia", "area_original", "nodo",
                 "tipo_operacion", "ingresos", "salidas", "pendiente_hil",
                 "origen_fecha", "origen_saldo", "saldo_documental", "saldo_vigente", "saldo_esperado", "hallazgos_documentales",
+                "fecha_documental_texto", "fecha_precision", "gestion_confirmada",
             )])
             yield buffer.getvalue()
             buffer.seek(0)
@@ -215,5 +225,5 @@ def exportar_inventario(
 
     return StreamingResponse(
         generar(), media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="reporte_inventario_{gestion}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="reporte_inventario_{gestion or "sin_gestion_confirmada"}.csv"'},
     )

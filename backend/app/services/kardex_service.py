@@ -5,6 +5,7 @@ from thefuzz import fuzz
 from app.models.kardex import LoteCarga, MovimientoKardex
 from app.schemas.kardex import ExtraccionKardexHoja, MovimientoKardexCreate
 from app.services.clasificador_nodos import clasificar_movimiento
+from app.services.fechas_documentales import ESTADO_PRECISION, ESTADOS_INCOMPLETOS, fecha_asignable
 
 
 def diferencias_titulos(nombre: str, paginas: list[ExtraccionKardexHoja]) -> list[dict]:
@@ -94,7 +95,7 @@ def calcular_y_validar_saldos(
                 obs = "Error de consistencia aritmética en saldo físico."
 
             # Validación cronológica
-            error_fecha = bool(ultima_fecha and fila.fecha < ultima_fecha)
+            error_fecha = bool(fila.fecha and ultima_fecha and fila.fecha < ultima_fecha)
             if error_fecha:
                 obs_crono = "Error cronológico: La fecha es anterior al registro previo."
                 obs = f"{obs} | {obs_crono}" if obs else obs_crono
@@ -113,6 +114,12 @@ def calcular_y_validar_saldos(
                 articulo_id=articulo_id,
                 lote_id=lote_id,
                 fecha_movimiento=fila.fecha,
+                fecha_documental_texto=fila.fecha_documental_texto,
+                fecha_precision=fila.fecha_precision,
+                revision_documental=({"fecha_documental": fila.fecha_documental_texto,
+                    "fecha_precision": fila.fecha_precision, "origen_fecha": "FOTO",
+                    "motivo_fecha": "La extracción conserva una fecha incompleta sin asignar un día."}
+                    if fila.fecha is None else None),
                 detalle=fila.detalle,
                 referencia=fila.referencia,
                 area=fila.area,
@@ -125,8 +132,8 @@ def calcular_y_validar_saldos(
                 tiene_error_saldo=tiene_error,
                 fecha_original=fila.fecha,
                 datos_originales={"fuente": "EXTRACCION_MLLM", **fila.model_dump(mode="json")},
-                tiene_error_fecha=error_fecha,
-                fecha_estado="PENDIENTE_HIL" if error_fecha else "SIN_ALERTA",
+                tiene_error_fecha=error_fecha or fila.fecha is None,
+                fecha_estado=ESTADO_PRECISION.get(fila.fecha_precision, "PENDIENTE_HIL" if error_fecha else "SIN_ALERTA"),
                 saldo_calculado=saldo_esperado,
                 observaciones=obs,
                 nodo_grafo=clasificacion.nodo_grafo,
@@ -138,7 +145,8 @@ def calcular_y_validar_saldos(
             movimientos.append(mov)
 
             saldo_acumulado = fila.saldo_registrado
-            ultima_fecha = fila.fecha
+            if fila.fecha:
+                ultima_fecha = fila.fecha
 
     return movimientos
 
@@ -223,15 +231,16 @@ def recalcular_saldos_posteriores(db: Session, articulo_id: int, confirmar: bool
 
         fila.tiene_error_saldo = saldo_esperado != fila.saldo_registrado
         fila.saldo_calculado = saldo_esperado
-        fila.tiene_error_fecha = bool(ultima_fecha and fila.fecha_movimiento < ultima_fecha)
-        if fila.fecha_estado != "CONFIRMADA_DOCUMENTO":
+        fila.tiene_error_fecha = fila.fecha_movimiento is None or bool(ultima_fecha and fila.fecha_movimiento < ultima_fecha)
+        if fila.fecha_estado not in {"CONFIRMADA_DOCUMENTO", *ESTADOS_INCOMPLETOS}:
             if fila.tiene_error_fecha:
                 fila.fecha_estado = "PENDIENTE_HIL"
             elif fila.fecha_estado == "PENDIENTE_HIL":
                 fila.fecha_estado = "SIN_ALERTA"
 
         saldo_acumulado = fila.saldo_registrado
-        ultima_fecha = fila.fecha_movimiento
+        if fecha_asignable(fila):
+            ultima_fecha = fila.fecha_movimiento
 
     if confirmar:
         db.commit()

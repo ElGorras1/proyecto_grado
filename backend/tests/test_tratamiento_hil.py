@@ -101,3 +101,48 @@ def test_revision_manual_posterior_no_conserva_categoria_obsoleta(db_session,fil
     _,saldo,_,_=filas;registrar(saldo)
     r=deepcopy(saldo.revision_documental);r['ultima_revision_manual']='Nueva evidencia humana';saldo.revision_documental=r
     assert resumen_tratamiento(saldo)['estado']=='REQUIERE_RECATEGORIZAR'
+
+
+def test_area_inferida_conserva_lectura_otras_marcas_y_exclusion(db_session,filas):
+    from app.services.areas_historicas import aplicar_asignacion, VERSION
+    _,_,doble,moderno=filas
+    registrar(doble)
+    previo=snapshot_revision(doble)
+    propuesta={'area':'Capacitación','version':VERSION,'soporte':'MEDIO',
+               'motivo':'Variante propuesta por correlación; identidad no confirmada.'}
+    assert aplicar_asignacion(doble,propuesta,plan_sha256='plan1',autor='Titular vía revisión asistida',registrado_en='2026-10-28')
+    assert doble.area==previo['area'] and doble.nodo_grafo=='Área: Capacitación'
+    assert doble.requiere_auditoria_nodo and doble.area_estado=='PENDIENTE_HIL'
+    posterior=snapshot_revision(doble)
+    permitidos={'nodo_grafo','area_estado','requiere_auditoria_nodo','revision_documental'}
+    assert {k:v for k,v in previo.items() if k not in permitidos}=={k:v for k,v in posterior.items() if k not in permitidos}
+    t=resumen_tratamiento(doble)
+    assert t['estado']=='CATEGORIZADO_CON_MARCA' and not t['habilita_entrenamiento']
+    assert {d['campo']:d['categoria'] for d in t['decisiones']}=={'area':'ASIGNACION_INFERIDA','referencia':'LECTURA_INCIERTA'}
+    assert not aplicar_asignacion(doble,propuesta,plan_sha256='plan1',autor='Otro',registrado_en='otro')
+    db_session.flush()
+    assert doble.id not in {f['id'] for f in seleccionar(leer_corte(db_session)['filas'])[0]}
+    rev=deepcopy(doble.revision_documental);rev['asignacion_area']['area']='CEDOAL';doble.revision_documental=rev
+    assert resumen_tratamiento(doble)['estado']=='REQUIERE_RECATEGORIZAR'
+    with pytest.raises(ValueError,match='históricos'):
+        aplicar_asignacion(moderno,propuesta,plan_sha256='plan1',autor='Otro',registrado_en='otro')
+
+
+def test_api_filtra_inferencias_y_no_las_confirma_sin_decision_de_nodo(client,db_session,usuario_operador,filas):
+    from app.services.areas_historicas import aplicar_asignacion, VERSION
+    a,_,doble,_=filas;registrar(doble)
+    aplicar_asignacion(doble,{'area':'Capacitación','version':VERSION,'soporte':'MEDIO','motivo':'Correlación de siglas'},
+                       plan_sha256='plan1',autor='Revisión asistida',registrado_en='2026-10-28')
+    db_session.commit()
+    h={'Authorization':'Bearer '+create_access_token(usuario_operador.id)}
+    r=client.get('/api/v1/kardex/errores',headers=h,params={'articulo_id':a.id,'categoria':'ASIGNACION_INFERIDA'})
+    assert r.status_code==200 and {f['id'] for f in r.json()}=={doble.id}
+    url=f'/api/v1/kardex/movimiento/{doble.id}'
+    datos={'saldo_registrado':doble.saldo_registrado,'motivo':'Revisión de referencia únicamente'}
+    r=client.put(url,headers=h,json=datos)
+    assert r.status_code==200,r.text
+    assert r.json()['area_estado']=='PENDIENTE_HIL'
+    assert r.json()['revision_documental']['asignacion_area']['estado']=='INFERIDA'
+    r=client.put(url,headers=h,json=datos|{'nodo_grafo':'Área: CID'})
+    assert r.status_code==200,r.text
+    assert r.json()['revision_documental']['asignacion_area']['estado']=='SUSTITUIDA_REVISION_MANUAL'

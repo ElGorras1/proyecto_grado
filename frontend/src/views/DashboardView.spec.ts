@@ -29,7 +29,10 @@ describe('Inicio', () => {
         'analiticaOperativa',
         'gestionInstitucional',
         'alertasInventario',
+        'preparacionInventario',
+        'validacionProyecto',
         ...(rol === 'Administrador' ? ['usuarios'] : []),
+        ...(rol !== 'Operador' ? ['areasCatalogos'] : []),
         ...(rol !== 'Operador' ? ['reporteAccesos'] : []),
       ])
       w.unmount()

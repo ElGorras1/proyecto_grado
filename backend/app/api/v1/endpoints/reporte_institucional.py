@@ -18,7 +18,8 @@ from app.models.cierre_anual import CierreAnual
 from app.models.control_alertas import CasoControl
 from app.models.inventario import AperturaInventario, ConciliacionInicial
 from app.services.datos_analitica import leer_corte
-from app.services.inventario import base_kardex_dict, distribucion_dict, ultimos_cierres_kardex
+from app.services.inventario import base_kardex_dict, distribucion_dict
+from app.services.cierre_documental import fuentes_cierre
 
 router = APIRouter(prefix="/reportes/institucional", tags=["Informe institucional"])
 lector = require_roles("Administrador", "Auditor", "Operador")
@@ -27,11 +28,12 @@ lector = require_roles("Administrador", "Auditor", "Operador")
 def construir(db, gestion):
     aperturas = {a.articulo_id: a for a in db.query(AperturaInventario)}
     conciliados = {c.articulo_id for c in db.query(ConciliacionInicial)}
-    cierres = ultimos_cierres_kardex(db)
+    fuentes = fuentes_cierre(db)
     inventario, movimientos, errores = [], [], []
     for a in db.query(Activo).order_by(Activo.id):
         apertura = aperturas.get(a.id)
-        base = base_kardex_dict(cierres.get(a.id))
+        fuente = fuentes.get(a.id)
+        base = base_kardex_dict(fuente.cierre, fuente) if fuente else None
         if apertura:
             libro = consultar_kardex_digital(a.id, db, None)
             d = distribucion_dict(db, a.id, apertura)
@@ -102,7 +104,8 @@ def construir(db, gestion):
                 eventos=len(movimientos),
                 ingresos_y_ajustes=sum(e["ingreso"] for e in movimientos),
                 salidas_y_ajustes=sum(e["salida"] for e in movimientos),
-                trasladado=sum(e["cantidad_transferida"] for e in movimientos),
+                trasladado=sum(e["cantidad_transferida"] for e in movimientos if e["clase"] != "RECTIFICACION_LOGISTICA"),
+                rectificaciones_logisticas=sum(e["clase"] == "RECTIFICACION_LOGISTICA" for e in movimientos),
                 por_clase=dict(Counter(e["clase"] for e in movimientos)),
             ),
             cobertura_historica=dict(

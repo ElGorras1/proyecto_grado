@@ -3,18 +3,20 @@ import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import api from '@/services/api'
 
 interface MovimientoRevision {
-  id: number; fecha_movimiento: string; fecha_original?: string | null; fecha_estado: string
+  id: number; fecha_movimiento: string | null; fecha_original?: string | null; fecha_estado: string
+  fecha_documental_texto?: string | null; fecha_precision?: string | null
   ingresos: number | null; salidas: number | null; saldo_registrado: number
   detalle: string; referencia: string | null; area: string | null; nodo_grafo: string | null
   referencia_estado: string; ruta_imagen_respaldo: string | null
   datos_originales?: Record<string, unknown> | null
+  revision_documental?: { asignacion_area?: { estado: string; area: string; motivo: string } } | null
 }
 const props = defineProps<{ movimiento: MovimientoRevision }>()
 const emit = defineEmits<{ guardar: []; cerrar: [] }>()
 const m = props.movimiento
 const form = ref({ ingresos: m.ingresos, salidas: m.salidas, saldo_registrado: m.saldo_registrado,
   nodo_grafo: m.nodo_grafo, referencia: m.referencia, referencia_estado: m.referencia_estado,
-  fecha_movimiento: m.fecha_movimiento, decision_fecha: '', origen_fecha: 'FOTO', motivo: '' })
+  fecha_movimiento: m.fecha_movimiento ?? '', fecha_documental_texto: m.fecha_documental_texto ?? '', decision_fecha: '', origen_fecha: 'FOTO', motivo: '' })
 const guardando = ref(false)
 const error = ref('')
 const revisiones = ref<{ id: number; fecha: string; usuario: string; detalle: { motivo?: string; previo?: unknown; nuevo?: unknown } }[]>([])
@@ -34,12 +36,14 @@ async function guardar() {
   if (guardando.value) return
   if (!form.value.motivo.trim()) { error.value = 'Describe qué comprobaste en la evidencia y el motivo de la decisión.'; return }
   guardando.value = true; error.value = ''
-  const { fecha_movimiento, decision_fecha, origen_fecha, ...datos } = form.value
+  const { fecha_movimiento, fecha_documental_texto, decision_fecha, origen_fecha, nodo_grafo, ...datos } = form.value
   try {
     await api.put(`/kardex/movimiento/${m.id}`, { ...datos,
       ingresos: datos.ingresos || null, salidas: datos.salidas || null,
+      ...(nodo_grafo !== m.nodo_grafo ? { nodo_grafo } : {}),
       ...(decision_fecha ? { decision_fecha } : {}),
       ...(decision_fecha === 'corregir' ? { fecha_movimiento, origen_fecha } : {}),
+      ...(['parcial', 'ilegible', 'corregir'].includes(decision_fecha) ? { fecha_documental_texto: fecha_documental_texto.trim() || null } : {}),
     })
     emit('guardar')
   } catch (e: any) {
@@ -67,8 +71,13 @@ onBeforeUnmount(() => { if (focoAnterior?.isConnected) focoAnterior.focus() })
         </aside>
         <form @submit.prevent="guardar">
           <p><strong>Detalle:</strong> {{ m.detalle }}<br /><strong>Área escrita:</strong> {{ m.area || 'Ausente' }}</p>
-          <fieldset><legend>Fecha · {{ m.fecha_estado }}</legend><p>Original: {{ m.fecha_original || m.fecha_movimiento }} · Actual: {{ m.fecha_movimiento }}</p>
-            <label>Decisión<select v-model="form.decision_fecha"><option value="">Sin decisión sobre la fecha</option><option value="confirmar_documento">Confirmar: así está escrita en el documento</option><option value="corregir">Corregir fecha de consulta con evidencia</option></select></label>
+          <p v-if="m.revision_documental?.asignacion_area?.estado === 'INFERIDA'"><strong>Área inferida: {{ m.revision_documental.asignacion_area.area }}.</strong>
+            {{ m.revision_documental.asignacion_area.motivo }} La asignación no confirma la lectura del papel.</p>
+          <fieldset><legend>Fecha · {{ m.fecha_estado }}</legend><p>Primera lectura: {{ m.fecha_original || 'Sin fecha conservada' }} · Actual: {{ m.fecha_movimiento || 'Sin fecha completa' }}</p>
+            <p v-if="m.fecha_documental_texto">Texto escrito: {{ m.fecha_documental_texto }}</p>
+            <label>Decisión<select v-model="form.decision_fecha"><option value="">Sin decisión sobre la fecha</option><option v-if="m.fecha_movimiento && m.fecha_estado !== 'ESTIMADA_HIL'" value="confirmar_documento">Confirmar: así está escrita en el documento</option><option value="corregir">Corregir fecha de consulta con evidencia</option><option value="ausente">La celda de fecha está vacía</option><option value="parcial">La fecha escrita está incompleta</option><option value="ilegible">La fecha escrita es ilegible</option></select></label>
+            <label v-if="['parcial', 'ilegible'].includes(form.decision_fecha)">Texto de la celda FECHA<input v-model="form.fecha_documental_texto" maxlength="100" :required="form.decision_fecha === 'parcial'" /></label>
+            <small v-if="['ausente', 'parcial', 'ilegible'].includes(form.decision_fecha)">Se conservará sin fecha completa y fuera de las gestiones anuales y del entrenamiento. No se rellenará con una fecha supuesta.</small>
             <label v-if="form.decision_fecha === 'corregir'">Fecha corregida<input v-model="form.fecha_movimiento" type="date" required /></label>
             <label v-if="form.decision_fecha === 'corregir'">Origen de la fecha<select v-model="form.origen_fecha"><option value="FOTO">Legible en la fotografía</option><option value="HIPOTESIS">Estimada: no se recupera la fecha</option><option value="SECUENCIA_AJUSTADA">Ajustada para conservar la secuencia</option></select></label>
             <small v-if="form.decision_fecha === 'corregir' && form.origen_fecha !== 'FOTO'">Se marcará como fecha estimada y quedará fuera del entrenamiento histórico; no acredita la fecha del hecho.</small>

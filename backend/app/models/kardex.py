@@ -72,6 +72,10 @@ class MovimientoKardex(Base):
         UniqueConstraint("solicitud_id", name="uq_movimiento_solicitud"),
         CheckConstraint("movimiento_origen_id IS NULL OR movimiento_origen_id <> id",
                         name="ck_movimiento_devolucion_no_reflexiva"),
+        CheckConstraint("lote_id IS NOT NULL OR fecha_movimiento IS NOT NULL",
+                        name="ck_kardex_fecha_digital"),
+        CheckConstraint("fecha_precision IS NULL OR (fecha_precision = 'COMPLETA' AND fecha_movimiento IS NOT NULL) OR (fecha_precision IN ('PARCIAL','AUSENTE','ILEGIBLE') AND fecha_movimiento IS NULL)",
+                        name="ck_kardex_precision_fecha"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -91,7 +95,9 @@ class MovimientoKardex(Base):
         from app.services.tratamiento_hil import resumen_tratamiento
         return resumen_tratamiento(self)
 
-    fecha_movimiento: Mapped[datetime] = mapped_column(Date, nullable=False)
+    fecha_movimiento: Mapped[datetime | None] = mapped_column(Date, nullable=True)
+    fecha_documental_texto: Mapped[str | None] = mapped_column(String(100))
+    fecha_precision: Mapped[str | None] = mapped_column(String(20))
     detalle: Mapped[str] = mapped_column(Text, nullable=False)
     referencia: Mapped[str | None] = mapped_column(String(100))
     area: Mapped[str | None] = mapped_column(String(100))

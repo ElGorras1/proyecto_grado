@@ -18,7 +18,7 @@ Tu tarea es extraer la información del artículo y su tabla de movimientos a pa
 REGLAS CRÍTICAS DE EXTRACCIÓN:
 1. Identifica el nombre del artículo principal en la parte superior.
 2. Extrae todas las filas de la tabla respetando el orden secuencial de arriba hacia abajo.
-3. Normaliza rigurosamente todas las fechas al formato estándar YYYY-MM-DD. Si el año tiene formato de dos dígitos como '10', interprétalo como '2010'. Si es '13', como '2013'.
+3. Conserva el texto de FECHA en fecha_documental_texto y su precisión COMPLETA, PARCIAL, AUSENTE o ILEGIBLE. Normaliza a YYYY-MM-DD únicamente fechas completas acreditadas por la celda. Si falta día, mes o año, devuelve fecha=null y PARCIAL; si está vacía, fecha=null, texto=null y AUSENTE. Para texto ilegible usa ILEGIBLE y fecha=null. Nunca inventes 1 de enero ni completes componentes por la fecha anterior, la siguiente o el año actual. Solo convierte un año escrito con dos dígitos cuando su siglo está acreditado por el documento; si es ambiguo conserva el texto parcial y fecha=null.
 4. Si una celda de la columna 'INGRESOS' o 'SALIDAS' está vacía o contiene una línea horizontal, asígnale el valor null en el JSON.
 5. Limpia el texto de la columna 'DETALLE' conservando su significado original, sin alterar nombres de eventos o ferias.
 6. Ignora por completo las marcas de verificación manuscritas (checks, firmas) situadas fuera de los límites de las celdas de la tabla.

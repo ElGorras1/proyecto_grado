@@ -2,6 +2,8 @@ from app.models.rol import Rol
 from app.models.permiso import Permiso
 from app.models.rol_permiso import rol_permiso
 from app.models.area import Area
+from app.models.catalogo_areas import CatalogoArea, SinonimoArea
+from app.models.rectificacion_logistica import RectificacionLogistica
 from app.models.usuario import Usuario
 from app.models.activos import CategoriaActivo, Activo, Existencia
 from app.models.ubicacion_evento import UbicacionEvento
@@ -16,6 +18,8 @@ __all__ = [
     "Permiso",
     "rol_permiso",
     "Area",
+    "CatalogoArea", "SinonimoArea",
+    "RectificacionLogistica",
     "Usuario",
     "CategoriaActivo",
     "Activo",

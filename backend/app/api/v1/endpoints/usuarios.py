@@ -107,11 +107,11 @@ def crear_usuario(
         )
 
     if payload.area_id is not None:
-        area = db.query(Area).filter(Area.id == payload.area_id).first()
-        if not area:
+        area = db.query(Area).filter(Area.id == payload.area_id).populate_existing().with_for_update(read=True).first()
+        if not area or area.estado != "activo":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El área especificada no existe",
+                detail="El área especificada no existe o está de baja",
             )
 
     nuevo_usuario = Usuario(
@@ -182,11 +182,11 @@ def actualizar_usuario(
 
     if "area_id" in payload.model_fields_set:
         if payload.area_id is not None:
-            area = db.query(Area).filter(Area.id == payload.area_id).first()
-            if not area:
+            area = db.query(Area).filter(Area.id == payload.area_id).populate_existing().with_for_update(read=True).first()
+            if not area or area.estado != "activo":
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="El área especificada no existe",
+                    detail="El área especificada no existe o está de baja",
                 )
         usuario.area_id = payload.area_id
 
@@ -282,6 +282,10 @@ def reactivar_usuario(
             detail="Usuario no encontrado",
         )
 
+    if usuario.area_id is not None:
+        area = db.query(Area).filter_by(id=usuario.area_id).populate_existing().with_for_update(read=True).first()
+        if area is None or area.estado != "activo":
+            raise HTTPException(409, "Reasigna la cuenta a un área activa o retira su adscripción antes de reactivarla")
     usuario.estado = "activo"
     db.commit()
     db.refresh(usuario)

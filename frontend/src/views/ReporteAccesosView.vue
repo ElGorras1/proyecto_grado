@@ -82,7 +82,7 @@ onMounted(cargarAccesos)
 
     <p v-if="error" class="error">{{ error }}</p>
 
-    <table v-if="accesos.length > 0">
+    <div v-if="accesos.length > 0" class="tabla-scroll"><table>
       <thead>
         <tr>
           <th>Fecha / Hora</th>
@@ -113,13 +113,14 @@ onMounted(cargarAccesos)
           <td>{{ a.ip_origen ?? '—' }}</td>
         </tr>
       </tbody>
-    </table>
+    </table></div>
 
     <p v-else-if="!cargando">No hay registros de acceso.</p>
   </div>
 </template>
 
 <style scoped>
+.tabla-scroll { max-width: 100%; overflow-x: auto; }
 .reporte-accesos {
   padding: 2rem;
   font-family: system-ui, sans-serif;

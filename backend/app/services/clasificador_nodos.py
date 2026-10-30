@@ -131,9 +131,41 @@ def _clasificar_operacion(
     return None
 
 
+def _clasificar_entrada_catalogo(
+    nombre: str,
+    tipo: str,
+    confirmado: bool,
+    ingreso: int,
+    salida: int,
+) -> tuple[str, str, bool]:
+    """El tipo del catálogo determina el nodo; una operación no es una unidad."""
+    if tipo == "departamento":
+        return (f"Área: {nombre}",
+                AREA_RESUELTA_AUTOMATICAMENTE if confirmado else AREA_PENDIENTE_HIL,
+                not confirmado)
+    if tipo != "operacion":
+        return NODO_PENDIENTE_CLASIFICACION, AREA_PENDIENTE_HIL, True
+
+    operaciones = {
+        "Ventas": ("Salida: Ventas", "salida"),
+        "Obsequios y Donaciones": ("Salida: Obsequios y Donaciones", "salida"),
+        "Consignación": ("Salida: Consignación", "salida"),
+        "Inventario / Compra": ("Entrada: Inventario / Compra", "ingreso"),
+        "Baja / Pérdida": ("Salida: Baja / Pérdida", "salida"),
+        "Salida a Feria": ("Salida: Feria del Libro (FIL)", "salida"),
+    }
+    nodo, direccion = operaciones.get(nombre, (nombre, None))
+    if ((direccion == "salida" and not (salida > 0 and ingreso == 0))
+            or (direccion == "ingreso" and not (ingreso > 0 and salida == 0))):
+        return NODO_PENDIENTE_CLASIFICACION, AREA_PENDIENTE_HIL, True
+    return nodo, AREA_NO_APLICA if confirmado else AREA_PENDIENTE_HIL, not confirmado
+
+
 def _resolver_area_con_catalogo(
     area_texto: str,
     db: Session | None,
+    ingreso: int = 0,
+    salida: int = 0,
 ) -> tuple[str, str, bool]:
     texto_area = area_texto.strip().upper()
     if _parece_ilegible(texto_area):
@@ -145,7 +177,7 @@ def _resolver_area_con_catalogo(
         coincidencia = db.execute(
             text(
                 """
-                SELECT nombre_oficial
+                SELECT nombre_oficial, tipo
                 FROM catalogo_areas
                 WHERE UPPER(nombre_oficial) = :texto
                    OR UPPER(abreviatura) = :texto
@@ -154,16 +186,14 @@ def _resolver_area_con_catalogo(
             {"texto": texto_area},
         ).fetchone()
         if coincidencia:
-            return (
-                f"Área: {coincidencia[0]}",
-                AREA_RESUELTA_AUTOMATICAMENTE,
-                False,
+            return _clasificar_entrada_catalogo(
+                coincidencia[0], coincidencia[1], True, ingreso, salida,
             )
 
         coincidencia = db.execute(
             text(
                 """
-                SELECT ca.nombre_oficial, sa.confirmado
+                SELECT ca.nombre_oficial, sa.confirmado, ca.tipo, sa.activa
                 FROM sinonimos_area sa
                 JOIN catalogo_areas ca ON sa.area_oficial_id = ca.id
                 WHERE UPPER(sa.texto_sucio) = :texto
@@ -172,21 +202,22 @@ def _resolver_area_con_catalogo(
             {"texto": texto_area},
         ).fetchone()
         if coincidencia:
+            if not coincidencia[3]:
+                return NODO_PENDIENTE_CLASIFICACION, AREA_PENDIENTE_HIL, True
             confirmado = bool(coincidencia[1])
-            return (
-                f"Área: {coincidencia[0]}",
-                AREA_RESUELTA_AUTOMATICAMENTE if confirmado else AREA_PENDIENTE_HIL,
-                not confirmado,
+            return _clasificar_entrada_catalogo(
+                coincidencia[0], coincidencia[2], confirmado, ingreso, salida,
             )
 
         areas = db.execute(
-            text("SELECT id, nombre_oficial, abreviatura FROM catalogo_areas")
+            text("SELECT id, nombre_oficial, abreviatura, tipo FROM catalogo_areas")
         ).fetchall()
         mejor_score = 0
         mejor_area = None
         mejor_id = None
+        mejor_tipo = None
 
-        for area_id, nombre, abreviatura in areas:
+        for area_id, nombre, abreviatura, tipo in areas:
             score_nombre = fuzz.ratio(texto_area, nombre.upper())
             score_abreviatura = fuzz.ratio(texto_area, abreviatura.upper()) if abreviatura else 0
             score = max(score_nombre, score_abreviatura)
@@ -194,6 +225,7 @@ def _resolver_area_con_catalogo(
                 mejor_score = score
                 mejor_area = nombre
                 mejor_id = area_id
+                mejor_tipo = tipo
 
         if mejor_score >= UMBRAL_FUZZY:
             try:
@@ -211,7 +243,9 @@ def _resolver_area_con_catalogo(
                     )
             except Exception as exc:
                 logger.warning("No se guardó la sugerencia de área; requiere revisión (%s)", type(exc).__name__)
-            return f"Área: {mejor_area}", AREA_PENDIENTE_HIL, True
+            return _clasificar_entrada_catalogo(
+                mejor_area, mejor_tipo, False, ingreso, salida,
+            )
 
         return NODO_AREA_NO_CATALOGADA, AREA_NO_CATALOGADA, True
     except Exception as exc:
@@ -253,6 +287,8 @@ def clasificar_movimiento(
         nodo, area_estado, auditoria_nodo = _resolver_area_con_catalogo(
             area_normalizada,
             db,
+            cantidad_ingreso,
+            cantidad_salida,
         )
     elif cantidad_salida > 0 and cantidad_ingreso == 0:
         nodo = NODO_DESTINO_NO_ESPECIFICADO

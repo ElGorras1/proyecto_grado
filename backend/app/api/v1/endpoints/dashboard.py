@@ -8,7 +8,9 @@ from app.models.activos import Activo
 from app.models.inventario import AperturaInventario
 from app.models.kardex import MovimientoKardex as M, LoteCarga
 from app.services.calidad_kardex import pendiente_hil_sql
+from app.services.fechas_documentales import fecha_pendiente_sql
 from app.services.clasificador_nodos import ESTADOS_AREA_PENDIENTES
+from app.services.cierre_documental import fuentes_cierre
 
 router = APIRouter(prefix="/reportes", tags=["Reportes"])
 
@@ -36,11 +38,23 @@ def resumen_dashboard(gestion: int = Query(..., ge=1900, le=2100),
     ).select_from(Activo).outerjoin(ultimos, ultimos.c.articulo_id == Activo.id).outerjoin(
         M, ultimos.c.id == M.id).outerjoin(
         AperturaInventario, AperturaInventario.articulo_id == Activo.id).one()
+    # Los cierres revisados prevalecen sobre propuestas por orden de carga.
+    # Se conserva el comportamiento de saldos digitales anteriores sin apertura.
+    fuentes = fuentes_cierre(db)
+    aperturas = {a.articulo_id for a in db.query(AperturaInventario)}
+    previos = dict(db.query(ultimos.c.articulo_id, M.saldo_registrado).join(M, M.id == ultimos.c.id).all())
+    for aid, fuente in fuentes.items():
+        if aid in aperturas or not fuente.cierre or not fuente.revision or not fuente.revision.cierre_movimiento_id:
+            continue
+        anterior, seleccionado = previos.get(aid), fuente.cierre.saldo_registrado
+        stock += seleccionado - (anterior or 0)
+        con_movimiento += int(anterior is None)
+        sin_stock += int(seleccionado <= 0) - int(anterior is not None and anterior <= 0)
     calidad = db.query(
         func.count(M.id),
         func.coalesce(func.sum(case((pendientes, 1), else_=0)), 0),
         func.coalesce(func.sum(case((M.tiene_error_saldo.is_(True), 1), else_=0)), 0),
-        func.coalesce(func.sum(case((M.fecha_estado == "PENDIENTE_HIL", 1), else_=0)), 0),
+        func.coalesce(func.sum(case((fecha_pendiente_sql(), 1), else_=0)), 0),
         func.coalesce(func.sum(case((or_(M.requiere_auditoria_nodo.is_(True), M.area_estado.in_(ESTADOS_AREA_PENDIENTES)), 1), else_=0)), 0),
         func.coalesce(func.sum(case((or_(M.requiere_auditoria_referencia.is_(True), M.referencia_estado.in_(("ILEGIBLE", "INCIERTA"))), 1), else_=0)), 0),
         func.count(distinct(M.articulo_id)),

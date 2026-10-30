@@ -32,3 +32,11 @@ from app.api.v1.endpoints import cierre_anual
 api_router.include_router(cierre_anual.router)
 from app.api.v1.endpoints import reporte_institucional
 api_router.include_router(reporte_institucional.router)
+from app.api.v1.endpoints import administracion_areas
+api_router.include_router(administracion_areas.router)
+from app.api.v1.endpoints import rectificaciones_logisticas
+api_router.include_router(rectificaciones_logisticas.router)
+from app.api.v1.endpoints import preparacion_inventario
+api_router.include_router(preparacion_inventario.router)
+from app.api.v1.endpoints import validacion_independiente
+api_router.include_router(validacion_independiente.router)

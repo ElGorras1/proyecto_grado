@@ -19,6 +19,7 @@ from app.models.usuario import Usuario
 from app.core.config import settings
 from app.services.control_movimientos import parametros_control, evaluar_movimiento, evaluar_ubicacion, aviso_repeticion, stock_ubicacion, confirmar_alertas
 from app.services.control_alertas import registrar_caso
+from app.services.rectificaciones_logisticas import estado_vigente, original
 from app.services.inventario import (
     auditar, bloquear_apertura, cambiar_existencia_area, distribucion_dict,
     verificar_distribucion,
@@ -43,15 +44,17 @@ class TransferenciaCrear(BaseModel):
 
 
 def registro_dict(db: Session, fila: TransferenciaArea) -> dict:
-    origen = db.get(Area, fila.area_origen_id)
-    destino = db.get(Area, fila.area_destino_id)
+    vigente, version, rect = estado_vigente(db, "TRANSFERENCIA", fila)
+    origen = db.get(Area, vigente["area_origen_id"])
+    destino = db.get(Area, vigente["area_destino_id"])
     return {campo: getattr(fila, campo) for campo in (
         "id", "solicitud_id", "articulo_id", "area_origen_id", "area_destino_id",
         "cantidad", "total_institucional", "encargado_id", "registrado_por",
         "ocurrido_en", "registrado_en", "referencia_documento", "observaciones",
         "alertas_control", "justificacion_alertas",
-    )} | {"area_origen": origen.nombre if origen else None,
-         "area_destino": destino.nombre if destino else None}
+    )} | vigente | {"area_origen": origen.nombre if origen else None,
+         "area_destino": destino.nombre if destino else None, "datos_originales": original("TRANSFERENCIA", fila),
+         "datos_vigentes": vigente, "version_rectificacion": version, "ultima_rectificacion_id": rect.id if rect else None}
 
 
 @router.get("/{articulo_id}/transferencias")
@@ -126,7 +129,7 @@ def registrar_transferencia(
         raise HTTPException(409, "Stock insuficiente en el área de origen.")
     comparables = db.query(TransferenciaArea).filter_by(
         articulo_id=articulo_id, area_origen_id=origen.id, area_destino_id=destino.id)
-    cantidades = [f.cantidad for f in comparables.order_by(TransferenciaArea.id.desc()).limit(20)]
+    cantidades = [estado_vigente(db, "TRANSFERENCIA", f)[0]["cantidad"] for f in comparables.order_by(TransferenciaArea.id.desc()).limit(20)]
     alertas = evaluar_movimiento(tipo="ingreso", cantidad=payload.cantidad, saldo=total,
         fecha_local=ahora.astimezone(ZoneInfo("America/La_Paz")),
         fecha_operacion_local=ocurrio.astimezone(ZoneInfo("America/La_Paz")) if payload.fecha_operacion else None,

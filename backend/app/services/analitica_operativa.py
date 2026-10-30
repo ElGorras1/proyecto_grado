@@ -50,6 +50,11 @@ def fecha(valor):
 
 
 def capturar(db):
+    from app.models.rectificacion_logistica import RectificacionLogistica
+    rectificadas = set()
+    for r in db.query(RectificacionLogistica):
+        rectificadas.add(("CUSTODIA" if r.clase == "ENTREGA" else r.clase,
+                         r.transferencia_id if r.clase == "TRANSFERENCIA" else r.custodia_id if r.clase == "ENTREGA" else r.evento_custodia_id))
     filas, omitidos = [], defaultdict(int)
     nombres = {a.id: a.nombre for a in db.query(Activo)}
     corregidos = {
@@ -70,6 +75,9 @@ def capturar(db):
                 modelo.corrige_movimiento_id.is_(None),
             )
         for f in q:
+            if (clase, f.id) in rectificadas:
+                omitidos["rectificados_logisticos"] += 1
+                continue
             if clase == "MOVIMIENTO" and f.id in corregidos:
                 omitidos["rectificados"] += 1
                 continue

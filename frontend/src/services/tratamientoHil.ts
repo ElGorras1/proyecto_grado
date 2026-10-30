@@ -1,4 +1,6 @@
 export const categoriasHil = {
+  ASIGNACION_INFERIDA: 'Área asignada por correlación',
+  DATO_AUSENTE: 'Dato ausente en el documento',
   DISCREPANCIA_DOCUMENTAL: 'Discrepancia del documento',
   AMBITO_DOCUMENTAL_INCIERTO: 'Ámbito de la hoja no confirmado',
   DEPENDENCIA_OTRA_FILA: 'Depende de otra fila',

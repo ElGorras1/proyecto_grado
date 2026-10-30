@@ -9,6 +9,7 @@ from sqlalchemy.orm import defer
 from app.models.activos import Activo
 from app.models.kardex import LoteCarga, MovimientoKardex
 from app.services.control_movimientos import parametros_control
+from app.services.fechas_documentales import datos_fecha, fecha_asignable
 
 VERSION = '2026-10-14.2'
 REGLAS = {
@@ -52,7 +53,7 @@ def texto(v):
 
 def fecha_estimada(f):
     rev = f.get('revision_documental') or {}
-    return f.get('fecha_estado') == 'ESTIMADA_HIL' or rev.get('origen_fecha') in {'HIPOTESIS', 'SECUENCIA_AJUSTADA'}
+    return not f.get('fecha') or f.get('fecha_estado') == 'ESTIMADA_HIL' or rev.get('origen_fecha') in {'HIPOTESIS', 'SECUENCIA_AJUSTADA'}
 
 
 def cantidad(f):
@@ -208,8 +209,9 @@ def leer(db, *, articulo_id=None, articulo=None):
         MovimientoKardex.orden_fila, MovimientoKardex.id).all()
     return evaluar([{
         'id': m.id, 'articulo_id': m.articulo_id, 'articulo': a.nombre, 'codigo': a.codigo,
-        'fecha': m.fecha_movimiento.isoformat(), 'fecha_original': m.fecha_original.isoformat() if m.fecha_original else None,
-        'fecha_estado': m.fecha_estado, 'gestion': m.fecha_movimiento.year,
+        'fecha': m.fecha_movimiento.isoformat() if m.fecha_movimiento else None, 'fecha_original': m.fecha_original.isoformat() if m.fecha_original else None,
+        **datos_fecha(m),
+        'fecha_estado': m.fecha_estado, 'gestion': m.fecha_movimiento.year if fecha_asignable(m) else None,
         'detalle': m.detalle, 'referencia': m.referencia, 'nodo': m.nodo_grafo,
         'ingresos': m.ingresos, 'salidas': m.salidas, 'saldo_vigente': m.saldo_registrado,
         'saldo_calculado_hil': m.saldo_calculado, 'error_saldo': m.tiene_error_saldo,

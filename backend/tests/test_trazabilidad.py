@@ -48,6 +48,20 @@ def test_historico_muestra_evidencia_y_no_inventa_almacen_ni_responsable(
     assert consulta(client, usuario_admin, articulo, tanda=1)["total"] == 0
 
 
+def test_historico_distingue_asignacion_inferida_de_referencia_confirmada(client,db_session,usuario_admin,activos_prueba):
+    articulo,_=activos_prueba
+    lote=LoteCarga(total_imagenes=1);db_session.add(lote);db_session.flush()
+    m=crear_movimiento(db_session,articulo_id=articulo.id,lote_id=lote.id,fecha=date(2020,1,1),saldo=2,ingresos=2,numero_pagina=1,orden_fila=1)
+    m.area='CDP';m.nodo_grafo='Área: Capacitación';m.area_estado='PENDIENTE_HIL';m.requiere_auditoria_nodo=True
+    m.revision_documental={'asignacion_area':{'estado':'INFERIDA','area':'Capacitación','motivo':'Correlación; identidad no confirmada'}}
+    db_session.commit()
+    d=consulta(client,usuario_admin,articulo)
+    e=d['eventos'][0]
+    assert e['area_documental']=='CDP' and e['asignacion_area']['area']=='Capacitación'
+    assert e['estado_relacion']=='PENDIENTE'
+    assert any(c['etiqueta']=='Área inferida por correlación' for c in e['conexiones'])
+
+
 def test_transferencias_devoluciones_rectificaciones_y_contexto_fuera_de_fecha(
     client, db_session, usuario_admin, activos_prueba,
 ):

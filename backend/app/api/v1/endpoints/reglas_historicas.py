@@ -13,6 +13,7 @@ from app.api.deps import require_roles
 from app.db.session import get_db
 from app.models.kardex import MovimientoKardex
 from app.services import reglas_historicas as reglas
+from app.services.fechas_documentales import fecha_asignable_sql
 
 router = APIRouter(prefix='/analitica', tags=['Reglas de auditoría histórica'])
 lector = require_roles('Administrador', 'Operador', 'Auditor')
@@ -29,7 +30,7 @@ def seleccionadas(db, gestion, articulo, regla, seleccion):
 @router.get('/reglas-historicas/opciones')
 def opciones(db: Session = Depends(get_db), _=Depends(lector)):
     q = db.query(MovimientoKardex).filter(MovimientoKardex.lote_id.isnot(None), MovimientoKardex.estado == 'ACTIVO')
-    gestiones = q.with_entities(func.extract('year', MovimientoKardex.fecha_movimiento)).distinct().all()
+    gestiones = q.filter(fecha_asignable_sql()).with_entities(func.extract('year', MovimientoKardex.fecha_movimiento)).distinct().all()
     return {'gestiones': sorted((int(y) for (y,) in gestiones), reverse=True),
             'politica': reglas.politica(), 'total_historico': q.count()}
 
@@ -67,14 +68,15 @@ def descargar(
     writer.writerow(('ID', 'Gestion para consulta', 'Fecha', 'Fecha estimada', 'Articulo', 'Codigo',
                      'Tanda', 'Lote', 'Foto', 'Fila', 'Ingresos', 'Salidas', 'Saldo previo',
                      'Base utilizable', 'Saldo vigente', 'Esperado por reglas', 'Reglas',
-                     'Motivos', 'Evaluaciones no disponibles', 'Foto respaldo', 'Politica'))
+                     'Motivos', 'Evaluaciones no disponibles', 'Foto respaldo', 'Politica', 'Fecha escrita', 'Precisión fecha'))
     for f in filas:
         writer.writerow([celda(v) for v in (
             f['id'], f['gestion'], f['fecha'], f['fecha_estimada'], f['articulo'], f['codigo'],
             f['tanda'], f['lote_id'], f['numero_pagina'], f['orden_fila'], f['ingresos'], f['salidas'],
             f['saldo_previo'], f['base_utilizable'], f['saldo_vigente'], f['saldo_esperado_reglas'],
             ', '.join(a['codigo'] for a in f['avisos']), ' | '.join(a['mensaje'] for a in f['avisos']),
-            json.dumps(f['no_evaluables'], ensure_ascii=False), f['ruta_imagen_respaldo'], reglas.VERSION)])
+            json.dumps(f['no_evaluables'], ensure_ascii=False), f['ruta_imagen_respaldo'], reglas.VERSION,
+            f.get('fecha_documental_texto'), f.get('fecha_precision'))])
     return Response('\ufeff'+out.getvalue(), media_type='text/csv; charset=utf-8',
                     headers={'Content-Disposition': f'attachment; filename="reglas_historicas_{gestion or "todas"}.csv"'})
 

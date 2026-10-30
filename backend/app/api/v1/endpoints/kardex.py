@@ -22,7 +22,7 @@ from app.models.usuario import Usuario
 from app.models.inventario import AperturaInventario, ConciliacionInicial
 from app.services.inventario import (
     auditar, apertura_dict, asegurar_apertura_desde_kardex,
-    base_kardex_dict, ultimos_cierres_kardex, ultimo_cierre_kardex,
+    base_kardex_dict,
     cambiar_existencia_area, verificar_distribucion, distribucion_dict,
     cantidad_efectiva_movimiento, cantidad_devuelta_efectiva,
 )
@@ -58,6 +58,8 @@ from app.services.control_movimientos import (
     cantidades_comparables, aviso_repeticion, stock_ubicacion,
 )
 from app.services.calidad_kardex import pendiente_hil_sql, tipos_alerta, snapshot_original
+from app.services.fechas_documentales import ESTADO_PRECISION, fecha_asignable, fecha_pendiente_sql
+from app.services.cierre_documental import fuentes_cierre, fuente_cierre
 from app.services.validacion_carga import preparar_imagen, limites_carga
 from app.core.config import settings
 
@@ -377,18 +379,22 @@ def update_movimiento_kardex(
     if payload.referencia_estado == "PRESENTE" and not (referencia_final or "").strip():
         raise HTTPException(400, "Una referencia presente debe tener texto legible")
         
-    campos_revision = ("ingresos", "salidas", "saldo_registrado", "nodo_grafo", "fecha_movimiento",
+    if payload.decision_fecha == "confirmar_documento" and not fecha_asignable(movimiento):
+        raise HTTPException(422, "Una fecha ausente, parcial o estimada requiere una lectura completa para confirmarse")
+    campos_revision = ("ingresos", "salidas", "saldo_registrado", "nodo_grafo", "fecha_movimiento", "fecha_documental_texto", "fecha_precision",
                        "fecha_estado", "area_estado", "referencia", "referencia_estado", "revision_documental")
     def valores():
-        return {campo: (getattr(movimiento, campo).isoformat() if campo == "fecha_movimiento"
+        return {campo: (getattr(movimiento, campo).isoformat() if campo == "fecha_movimiento" and getattr(movimiento, campo) is not None
                          else getattr(movimiento, campo)) for campo in campos_revision}
     valores_previos = valores()
     if movimiento.datos_originales is None:
         movimiento.datos_originales = snapshot_original(movimiento)
-    if movimiento.fecha_original is None:
-        movimiento.fecha_original = movimiento.fecha_movimiento
+        if movimiento.fecha_original is None:
+            movimiento.fecha_original = movimiento.fecha_movimiento
     if payload.decision_fecha == "corregir":
         movimiento.fecha_movimiento = payload.fecha_movimiento
+        movimiento.fecha_precision = "COMPLETA"
+        movimiento.fecha_documental_texto = payload.fecha_documental_texto or (payload.fecha_movimiento.isoformat() if (payload.origen_fecha or "FOTO") == "FOTO" else None)
         origen = payload.origen_fecha or "FOTO"
         revision = dict(movimiento.revision_documental or {})
         revision.update(origen_fecha=origen, motivo_fecha=payload.motivo.strip(),
@@ -399,6 +405,17 @@ def update_movimiento_kardex(
             revision.setdefault("fecha_documental", None)
         movimiento.revision_documental = revision
         movimiento.fecha_estado = "ESTIMADA_HIL" if origen != "FOTO" else "CORREGIDA"
+    elif payload.decision_fecha in {"ausente", "parcial", "ilegible"}:
+        precision = {"ausente": "AUSENTE", "parcial": "PARCIAL", "ilegible": "ILEGIBLE"}[payload.decision_fecha]
+        movimiento.fecha_movimiento = None
+        movimiento.fecha_precision = precision
+        movimiento.fecha_documental_texto = None if precision == "AUSENTE" else (payload.fecha_documental_texto or "").strip() or None
+        movimiento.fecha_estado = ESTADO_PRECISION[precision]
+        revision = dict(movimiento.revision_documental or {})
+        revision.update(fecha_documental=movimiento.fecha_documental_texto, fecha_precision=precision,
+                        origen_fecha="FOTO", motivo_fecha=payload.motivo.strip(),
+                        motivo=payload.motivo.strip(), criterios=revision.get("criterios", ["HIL_MANUAL"]))
+        movimiento.revision_documental = revision
     elif payload.decision_fecha == "confirmar_documento":
         movimiento.fecha_estado = "CONFIRMADA_DOCUMENTO"
     
@@ -427,6 +444,12 @@ def update_movimiento_kardex(
         movimiento.nodo_grafo = nodo_grafo
         movimiento.area_estado = area_estado
         movimiento.requiere_auditoria_nodo = requiere_auditoria
+        revision = dict(movimiento.revision_documental or {})
+        asignacion = revision.get("asignacion_area")
+        if isinstance(asignacion, dict) and asignacion.get("estado") == "INFERIDA":
+            revision["asignacion_area"] = {**asignacion, "estado": "SUSTITUIDA_REVISION_MANUAL",
+                                           "nodo_revision_manual": nodo_grafo}
+            movimiento.revision_documental = revision
 
     if payload.area_estado is not None:
         movimiento.area_estado = payload.area_estado
@@ -558,7 +581,7 @@ def get_articulos_typeahead(
     sum_amarillas = func.sum(case((and_(historico_activo, or_(
         MovimientoKardex.requiere_auditoria_nodo == True,
         MovimientoKardex.requiere_auditoria_referencia == True,
-        MovimientoKardex.fecha_estado == "PENDIENTE_HIL",
+        fecha_pendiente_sql(),
         MovimientoKardex.area_estado.in_(ESTADOS_AREA_PENDIENTES),
         MovimientoKardex.referencia_estado.in_(("ILEGIBLE", "INCIERTA")),
     )), 1), else_=0)).label('amarillas')
@@ -571,12 +594,13 @@ def get_articulos_typeahead(
     
     aperturas = {a.articulo_id: a for a in db.query(AperturaInventario).all()}
     conciliaciones = {c.articulo_id: c for c in db.query(ConciliacionInicial).all()}
-    cierres = ultimos_cierres_kardex(db)
+    fuentes = fuentes_cierre(db)
     lista = []
     for a in resultados:
         apertura = aperturas.get(a.id)
         conciliacion = conciliaciones.get(a.id)
-        base_kardex = base_kardex_dict(cierres.get(a.id))
+        fuente = fuentes.get(a.id)
+        base_kardex = base_kardex_dict(fuente.cierre, fuente) if fuente else None
         stock = apertura.cantidad_actual if apertura else (
             base_kardex["saldo"] if base_kardex else None)
         diferencia = None
@@ -628,7 +652,7 @@ def get_errores_human_in_the_loop(
     tipo: Optional[Literal["saldo", "fecha", "area", "referencia"]] = None,
     tanda: Optional[int] = Query(None, ge=1, le=9999),
     tratamiento: Optional[Literal["POR_CATEGORIZAR", "CATEGORIZADO_CON_MARCA", "REQUIERE_RECATEGORIZAR"]] = None,
-    categoria: Optional[Literal["DISCREPANCIA_DOCUMENTAL", "AMBITO_DOCUMENTAL_INCIERTO", "DEPENDENCIA_OTRA_FILA", "POSIBLE_DUPLICIDAD_DOCUMENTAL", "CATALOGO_NO_CONFIRMADO", "LECTURA_INCIERTA", "MARCA_NO_INTERPRETADA", "EFECTO_INDETERMINADO"]] = None,
+    categoria: Optional[Literal["ASIGNACION_INFERIDA", "DATO_AUSENTE", "DISCREPANCIA_DOCUMENTAL", "AMBITO_DOCUMENTAL_INCIERTO", "DEPENDENCIA_OTRA_FILA", "POSIBLE_DUPLICIDAD_DOCUMENTAL", "CATALOGO_NO_CONFIRMADO", "LECTURA_INCIERTA", "MARCA_NO_INTERPRETADA", "EFECTO_INDETERMINADO"]] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -645,7 +669,7 @@ def get_errores_human_in_the_loop(
         
     if tipo:
         condiciones = {"saldo": MovimientoKardex.tiene_error_saldo.is_(True),
-                       "fecha": MovimientoKardex.fecha_estado == "PENDIENTE_HIL",
+                       "fecha": fecha_pendiente_sql(),
                        "area": or_(MovimientoKardex.requiere_auditoria_nodo.is_(True), MovimientoKardex.area_estado.in_(ESTADOS_AREA_PENDIENTES)),
                        "referencia": or_(MovimientoKardex.requiere_auditoria_referencia.is_(True), MovimientoKardex.referencia_estado.in_(("ILEGIBLE", "INCIERTA")))}
         query = query.filter(condiciones[tipo])
@@ -766,12 +790,12 @@ def get_nodos_disponibles(
 ):
     """Áreas y operaciones activas para selects."""
     result = db.execute(text(
-        "SELECT nombre_oficial, tipo FROM catalogo_areas WHERE activa = TRUE ORDER BY tipo, nombre_oficial"
+        "SELECT nombre_oficial, tipo, activa FROM catalogo_areas ORDER BY tipo, nombre_oficial"
     ))
     nodos = []
-    for nombre, tipo in result:
+    for nombre, tipo, activa in result:
         if tipo == 'departamento':
-            nodos.append({"valor": f"Área: {nombre}", "etiqueta": f"📍 {nombre}", "grupo": "Departamentos"})
+            nodos.append({"valor": f"Área: {nombre}", "etiqueta": f"📍 {nombre}" + (" · histórica/inactiva" if not activa else ""), "grupo": "Departamentos"})
         else:
             nodos.append({"valor": nombre, "etiqueta": f"📦 {nombre}", "grupo": "Tipo de Operación"})
     return nodos
@@ -1228,9 +1252,10 @@ def consultar_existencias_area(
     if db.get(Activo, articulo_id) is None:
         raise HTTPException(404, "Artículo no encontrado")
     apertura = db.get(AperturaInventario, articulo_id)
-    cierre = ultimo_cierre_kardex(db, articulo_id) if apertura is None else None
+    fuente = fuente_cierre(db, articulo_id) if apertura is None else None
+    cierre = fuente.cierre if fuente else None
     return distribucion_dict(db, articulo_id, apertura,
-                             base_kardex_dict(cierre) if cierre else None)
+                             base_kardex_dict(cierre, fuente) if cierre else None)
 
 
 @router.post("/articulos/{articulo_id}/asignar-area")
@@ -1267,6 +1292,8 @@ def aprobar_apertura(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("Administrador")),
 ):
+    from app.services.cierre_anual import verificar_periodo_abierto
+    verificar_periodo_abierto(db)
     # La fila del artículo existe incluso antes de su primera apertura.
     articulo = db.query(Activo).filter_by(id=articulo_id).with_for_update().first()
     if articulo is None:

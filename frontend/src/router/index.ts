@@ -53,6 +53,12 @@ const router = createRouter({
       meta: { roles: ['Administrador'] },
     },
     {
+      path: '/areas-catalogos',
+      name: 'areasCatalogos',
+      component: () => import('@/views/AreasCatalogosView.vue'),
+      meta: { roles: ['Administrador', 'Auditor'] },
+    },
+    {
       path: '/reportes/accesos',
       name: 'reporteAccesos',
       component: () => import('@/views/ReporteAccesosView.vue'),
@@ -80,6 +86,18 @@ const router = createRouter({
       path: '/inventario-vivo',
       name: 'inventarioVivo',
       component: () => import('@/views/InventarioActualView.vue'),
+      meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
+    },
+    {
+      path: '/validacion-proyecto',
+      name: 'validacionProyecto',
+      component: () => import('@/views/ValidacionProyectoView.vue'),
+      meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
+    },
+    {
+      path: '/preparacion-inventario',
+      name: 'preparacionInventario',
+      component: () => import('@/views/PreparacionInventarioView.vue'),
       meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
     },
     {

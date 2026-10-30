@@ -23,6 +23,7 @@ def test_informe_separa_stock_actual_periodo_y_cierre(client, escenario, usuario
         ingresos_y_ajustes=7,
         salidas_y_ajustes=5,
         trasladado=35,
+        rectificaciones_logisticas=0,
         por_clase={
             "TRANSFERENCIA": 1,
             "CUSTODIA_ENTREGA": 1,

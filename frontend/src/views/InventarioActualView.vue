@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import BuscadorArticulos from '@/components/BuscadorArticulos.vue'
 import TrazabilidadArticulo from '@/components/TrazabilidadArticulo.vue'
+import RectificacionLogistica from '@/components/RectificacionLogistica.vue'
+import type { ClaseLogistica, DatosLogisticos, FuenteLogistica, RectificableLogistico } from '@/services/rectificacionLogistica'
+import { useRoute } from 'vue-router'
 
 interface Articulo {
   id: number
@@ -16,8 +19,9 @@ interface Articulo {
   apertura: { cantidad_inicial: number; cantidad_actual: number; ultimo_moderno_id: number;
     aprobado_por: number; aprobado_en: string; referencia_documento: string; justificacion: string;
     origen: 'CONTEO_FISICO' | 'KARDEX_HISTORICO'; movimiento_historico_id: number | null; lote_historico_id: number | null } | null
-  base_kardex: { saldo: number; movimiento_id: number; lote_id: number; fecha_movimiento: string;
+  base_kardex: { saldo: number; movimiento_id: number; lote_id: number; fecha_movimiento: string | null;
     saldo_documental?: number | null; origen_saldo?: string; origen_fecha?: string; hallazgos_documentales?: string[];
+    fuente_cierre?: { estado: string; referencia?: string | null; revisado_por?: number | null };
     operable: boolean; motivo_bloqueo: string | null } | null
   corte_operativo?: { fecha_inicio: string; estado: string; movimientos_previos_no_registrados: string } | null
   diferencia_documental?: { saldo_base_congelada: number; saldo_cierre_disponible: number; diferencia: number } | null
@@ -84,7 +88,7 @@ interface DistribucionArea {
   estado: string
 }
 
-interface EventoCustodia {
+interface EventoCustodia extends RectificableLogistico {
   id: number; tipo: 'VENTA' | 'RETORNO'; cantidad: number;
   comprador: string | null; area_destino: string | null;
   ocurrido_en: string; registrado_en: string; referencia_documento: string;
@@ -93,7 +97,7 @@ interface EventoCustodia {
   alertas_control?: AlertaControl[] | null; justificacion_alertas?: string | null
 }
 
-interface CustodiaExterna {
+interface CustodiaExterna extends RectificableLogistico {
   id: number; tipo: 'FERIA' | 'CONSIGNACION'; estado: 'ABIERTA' | 'CERRADA';
   area_origen: string; receptor_nombre: string; receptor_tipo: string;
   ubicacion_externa: string; ciudad: string | null;
@@ -104,7 +108,7 @@ interface CustodiaExterna {
   alertas_control?: AlertaControl[] | null; justificacion_alertas?: string | null
 }
 
-interface TransferenciaArea {
+interface TransferenciaArea extends RectificableLogistico {
   id: number; solicitud_id: string; area_origen_id: number; area_destino_id: number;
   area_origen: string; area_destino: string; cantidad: number; total_institucional: number;
   encargado_id: number; registrado_por: number; ocurrido_en: string; registrado_en: string;
@@ -117,7 +121,9 @@ interface KardexDigital {
   base: { cantidad: number; origen: string; movimiento_historico_id: number | null;
     lote_historico_id: number | null; fecha_corte: string | null;
     referencia_documento: string | null } | null
-  eventos: { clase: 'OPERACION' | 'TRANSFERENCIA' | 'CUSTODIA_ENTREGA' | 'CUSTODIA_VENTA' | 'CUSTODIA_RETORNO'; id: number;
+  eventos: { clase: 'OPERACION' | 'TRANSFERENCIA' | 'CUSTODIA_ENTREGA' | 'CUSTODIA_VENTA' | 'CUSTODIA_RETORNO' | 'RECTIFICACION_LOGISTICA'; id: number;
+    corrige_clase?: string; corrige_registro_id?: number; rectificacion_anterior_id?: number | null;
+    areas_delta?: { area_id: number; delta: number }[]; datos_previos?: DatosLogisticos; datos_corregidos?: DatosLogisticos;
     fecha_operacion: string | null; fecha_documental: string | null;
     fecha_registro: string | null; descripcion: string; ingreso: number; salida: number;
     cantidad_original: number; cantidad_transferida: number;
@@ -149,8 +155,32 @@ interface AlertaControl {
 }
 
 const auth = useAuthStore()
+const route = useRoute()
 const esAdmin = computed(() => auth.rol === 'Administrador')
 const puedeOperar = computed(() => esAdmin.value || auth.rol === 'Operador')
+const fuenteLogistica = ref<FuenteLogistica | null>(null)
+function etiquetaLogistica(clase: string) {
+  return ({ TRANSFERENCIA: 'transferencia', ENTREGA: 'entrega externa', EVENTO_CUSTODIA: 'venta o retorno' } as Record<string, string>)[clase] ?? clase
+}
+function cambiosContextoLogistico(antes?: DatosLogisticos, despues?: DatosLogisticos) {
+  if (!antes || !despues) return []
+  const campos: [keyof DatosLogisticos, string][] = [['tipo', 'Tipo'], ['receptor_nombre', 'Receptor'],
+    ['ubicacion_externa', 'Ubicación externa'], ['ciudad', 'Ciudad'], ['comprador', 'Comprador'],
+    ['referencia_documento', 'Documento del hecho'], ['observaciones', 'Observaciones']]
+  return campos.filter(([campo]) => antes[campo] !== despues[campo])
+    .map(([campo, etiqueta]) => `${etiqueta}: ${antes[campo] ?? 'Sin dato'} → ${despues[campo] ?? 'Sin dato'}`)
+}
+async function iniciarRectificacionLogistica(clase: ClaseLogistica, fila: RectificableLogistico) {
+  if (!esAdmin.value || !fila.version_rectificacion || !fila.datos_vigentes) return
+  fuenteLogistica.value = { clase, registro_id: fila.id, version: fila.version_rectificacion, datos: fila.datos_vigentes }
+  await nextTick()
+  document.getElementById('rectificacion-logistica')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+}
+async function actualizarLogistica(guardado = false) {
+  fuenteLogistica.value = null
+  await Promise.all([cargarArticulos(), cargarTransferencias(), cargarCustodias(), cargarExistenciasArea(), cargarKardexDigital()])
+  if (guardado) mensajeExito.value = 'Rectificación registrada con compensación, motivo y autoría. El original se conserva.'
+}
 const aperturaForm = ref({ cantidad: 0, referencia_documento: '', justificacion: '', conteo_verificado: false })
 const aprobando = ref(false)
 async function aprobarApertura() {
@@ -343,6 +373,11 @@ watch(() => tx.value.feria_id, (newVal) => {
 onMounted(async () => {
   await cargarArticulos()
   await cargarCatalogos()
+  const id = Number(route?.query?.articulo_id)
+  if (Number.isSafeInteger(id) && id > 0) {
+    const articulo = articulos.value.find(a => a.id === id)
+    if (articulo) verDetalle(articulo)
+  }
   try {
     const { data } = await api.get('/kardex/politica-control')
     politicaControl.value = data?.version ? data : null
@@ -446,8 +481,10 @@ async function asignarArea() {
 
 async function cargarTransferencias() {
   if (!articuloSeleccionado.value) return
+  const articuloId = articuloSeleccionado.value.id
   try {
-    transferenciasArea.value = (await api.get(`/kardex/articulos/${articuloSeleccionado.value.id}/transferencias`)).data
+    const { data } = await api.get(`/kardex/articulos/${articuloId}/transferencias`)
+    if (articuloSeleccionado.value?.id === articuloId) transferenciasArea.value = data
   } catch (err) {
     console.error('Error al cargar transferencias', err)
   }
@@ -751,6 +788,7 @@ async function guardarAjuste() {
 }
 
 function verDetalle(art: Articulo) {
+  fuenteLogistica.value = null
   mostrarTrazabilidad.value = false
   articuloSeleccionado.value = art
   existenciasArea.value = null
@@ -979,7 +1017,7 @@ async function registrarTransaccion() {
       <label>Estado documental <select v-model="filtroObservacion"><option value="todos">Todos</option><option value="sin_observacion">Sin observación especial</option><option value="observados">Observados</option></select></label>
 
       <div class="lista-articulos">
-        <div v-for="art in articulosFiltrados" :key="art.id" class="articulo-card" @click="verDetalle(art)">
+        <button v-for="art in articulosFiltrados" :key="art.id" type="button" class="articulo-card" @click="verDetalle(art)">
           <div class="art-header">
             <div class="art-codigo">{{ art.codigo }}</div>
             <div class="stock-badge" :class="art.base_kardex && !art.apertura && !art.base_kardex.operable ? 'stock-review' : (art.stock_actual ?? 0) > 0 ? 'stock-ok' : 'stock-zero'">
@@ -988,13 +1026,13 @@ async function registrarTransaccion() {
           </div>
           <div class="art-nombre">{{ art.nombre }}</div>
           <small v-if="art.observacion_hil?.observado">Observado<span v-if="art.observacion_hil.excluir_entrenamiento"> · fuera del entrenamiento histórico</span></small>
-        </div>
+        </button>
       </div>
     </div>
 
     <!-- PANTALLA DETALLE ARTÍCULO -->
     <div v-if="vistaActual === 'detalle' && articuloSeleccionado" class="pantalla-detalle">
-      <div class="detalle-header">
+<div class="detalle-header">
         <div>
           <h2>{{ articuloSeleccionado.nombre }}</h2>
           <span class="art-codigo">{{ articuloSeleccionado.codigo }}</span>
@@ -1004,71 +1042,22 @@ async function registrarTransaccion() {
           <div class="stock-label">{{ articuloSeleccionado.apertura ? 'Total institucional' : articuloSeleccionado.base_kardex ? 'Saldo final escaneado' : 'Stock actual' }}</div>
         </div>
       </div>
-
-      <section v-if="!articuloSeleccionado.apertura && articuloSeleccionado.base_kardex" class="context-box mt-4">
-        <p v-if="articuloSeleccionado.observacion_hil?.observado"><strong>Artículo observado:</strong> {{ articuloSeleccionado.observacion_hil.motivo }}<span v-if="articuloSeleccionado.observacion_hil.excluir_entrenamiento"> Queda fuera del entrenamiento histórico. Las operaciones digitales mantienen sus controles de saldo.</span></p>
-        <strong>Base de trabajo del Kárdex histórico: {{ articuloSeleccionado.base_kardex.saldo }} u.</strong>
-        <p v-if="['RECONSTRUIDO', 'HIPOTESIS', 'ANOTACION_MARGEN'].includes(articuloSeleccionado.base_kardex.origen_saldo || '')">Origen: {{ articuloSeleccionado.base_kardex.origen_saldo }}. Saldo escrito cotejado: {{ articuloSeleccionado.base_kardex.saldo_documental ?? 'vacío o no legible' }}. La reconstrucción se conserva separada de la fuente.</p>
-        <p>Último movimiento escaneado #{{ articuloSeleccionado.base_kardex.movimiento_id }} · lote #{{ articuloSeleccionado.base_kardex.lote_id }} · {{ articuloSeleccionado.base_kardex.fecha_movimiento }}.</p>
-        <p>Este saldo documental será el punto de partida al registrar la primera operación moderna. No es un conteo físico de 2026; las hojas escaneadas permanecen intactas para auditoría.</p>
-        <p v-if="articuloSeleccionado.base_kardex.motivo_bloqueo" class="alert alert-error">{{ articuloSeleccionado.base_kardex.motivo_bloqueo }}</p>
-        <router-link :to="{ path: '/kardex-digital', query: { articulo_id: articuloSeleccionado.id } }">Ver Kárdex y evidencia</router-link>
-      </section>
-      <details v-if="politicaControl" class="context-box mt-4" aria-label="Reglas de control inmediato">
-        <summary>Reglas de control inmediato · umbrales provisionales</summary>
-        <p><router-link :to="{ path: '/alertas-inventario', query: { articulo_id: articuloSeleccionado.id } }">Ver alertas y seguimiento de este artículo</router-link></p>
-        <p>Se revisan el total institucional y las unidades de la ubicación seleccionada. Superar el stock disponible bloquea la operación; los avisos permiten confirmar una operación justificada.</p>
-        <ul>
-          <li>Usar todas las unidades disponibles o al menos {{ politicaControl.porcentaje_mayoritario }} % cuando hay {{ politicaControl.stock_minimo_mayoritario }} o más.</li>
-          <li>Cantidades de {{ politicaControl.cantidad_extrema }} unidades o más.</li>
-          <li>Cantidades desde {{ politicaControl.min_cantidad_atipica }} unidades que alcancen {{ politicaControl.factor_atipico }} veces la mediana de {{ politicaControl.min_comparables }} o más operaciones comparables.</li>
-          <li>Registro o hecho fuera de {{ String(politicaControl.hora_inicio).padStart(2, '0') }}:00–{{ String(politicaControl.hora_fin).padStart(2, '0') }}:00 en Bolivia, o registro {{ politicaControl.registro_tardio_horas }} horas después del hecho.</li>
-          <li>Posible repetición con el mismo documento, cantidad y participantes o ubicaciones dentro de {{ politicaControl.repeticion_minutos }} minutos.</li>
-        </ul>
-        <p>Los avisos ayudan a revisar errores y situaciones inusuales. La comparación usa operaciones digitales posteriores al corte; el Kárdex escaneado mantiene su función de auditoría.</p>
-      </details>
-      <section v-if="!articuloSeleccionado.apertura && (!articuloSeleccionado.base_kardex || !articuloSeleccionado.base_kardex.operable)" class="form-container mt-4">
-        <h3>Saldo de apertura pendiente</h3>
-        <p>{{ articuloSeleccionado.base_kardex ? 'El cierre histórico requiere revisión. Como alternativa, registra un conteo físico documentado.' : 'Este producto no tiene cierre histórico escaneado. Registra un conteo físico documentado.' }}</p>
-        <form v-if="esAdmin" @submit.prevent="aprobarApertura">
-          <div class="form-group mt-3">
-            <label for="apertura-cantidad">Cantidad física verificada (se permite cero)</label>
-            <input id="apertura-cantidad" v-model.number="aperturaForm.cantidad" type="number" min="0" max="2147483647" step="1" required />
-          </div>
-          <div class="form-group mt-3">
-            <label for="apertura-referencia">Referencia del acta o documento de conteo</label>
-            <input id="apertura-referencia" v-model="aperturaForm.referencia_documento" minlength="3" maxlength="255" required />
-          </div>
-          <div class="form-group mt-3">
-            <label for="apertura-justificacion">Justificación del saldo</label>
-            <textarea id="apertura-justificacion" v-model="aperturaForm.justificacion" minlength="10" maxlength="2000" required></textarea>
-          </div>
-          <p><label><input v-model="aperturaForm.conteo_verificado" type="checkbox" required /> Confirmo que el conteo físico está verificado. Esta apertura se aprueba una sola vez.</label></p>
-          <button class="btn-primary" type="submit" :disabled="aprobando || !aperturaForm.conteo_verificado">{{ aprobando ? 'Aprobando...' : 'Aprobar saldo de apertura' }}</button>
-        </form>
-        <p v-else>Un administrador debe aprobar la apertura para habilitar las operaciones.</p>
-      </section>
-      <div v-if="articuloSeleccionado.apertura" class="context-box mt-4">
-        <strong>{{ articuloSeleccionado.apertura.origen === 'KARDEX_HISTORICO' ? 'Base histórica fijada' : 'Apertura aprobada' }}: {{ articuloSeleccionado.apertura.cantidad_inicial }} u.</strong>
-        <p>{{ new Date(articuloSeleccionado.apertura.aprobado_en).toLocaleString('es-BO') }} · Responsable #{{ articuloSeleccionado.apertura.aprobado_por }}</p>
-        <p>Documento: {{ articuloSeleccionado.apertura.referencia_documento }}</p>
-        <p>{{ articuloSeleccionado.apertura.justificacion }}</p>
-        <p v-if="articuloSeleccionado.corte_operativo?.estado === 'BASE_DOCUMENTAL_PROVISIONAL'">
-          Base documental provisional desde {{ fechaRegistro(articuloSeleccionado.corte_operativo.fecha_inicio) }}.
-          Los movimientos reales anteriores al inicio deben conciliarse con respaldo o conteo físico.
-        </p>
-        <p v-if="articuloSeleccionado.corte_operativo?.estado === 'CONTEO_FISICO_CONCILIADO'">
-          El saldo inicial fue cotejado con un conteo físico por áreas. Los movimientos anteriores
-          que ocurrieron fuera del sistema siguen pendientes de reconstrucción documental.
-        </p>
-        <p v-if="articuloSeleccionado.diferencia_documental" role="alert" class="alert alert-error">
-          Un escaneo o corrección posterior cambió el cierre documental: base congelada
-          {{ articuloSeleccionado.diferencia_documental.saldo_base_congelada }} u., cierre disponible
-          {{ articuloSeleccionado.diferencia_documental.saldo_cierre_disponible }} u.
-          El stock vivo no cambió; revisa la diferencia antes de ajustar.
-        </p>
-      </div>
-      <section v-if="existenciasArea" class="context-box mt-4" aria-label="Existencias por ubicación">
+<nav class="indice-ficha" aria-label="Secciones de la ficha">
+ <a v-if="articuloSeleccionado.base_kardex && !articuloSeleccionado.apertura" href="#ficha-fuente">Fuente histórica</a>
+ <a v-if="articuloSeleccionado.apertura" href="#ficha-base">Base y apertura</a>
+ <a v-if="!articuloSeleccionado.apertura && (!articuloSeleccionado.base_kardex || !articuloSeleccionado.base_kardex.operable)" href="#ficha-apertura">Apertura pendiente</a>
+ <a v-if="existenciasArea" href="#ficha-ubicacion">Existencias y transferencias</a>
+ <a href="#ficha-operaciones">Ingresos y salidas</a>
+ <a v-if="existenciasArea" href="#ficha-custodia">Custodia externa</a>
+ <a v-if="conciliacionInicial" href="#ficha-conciliacion">Conciliación</a>
+ <a v-if="kardexDigital" href="#ficha-libro">Libro digital</a>
+ <a href="#ficha-trazabilidad">Trazabilidad</a>
+ <a href="#ficha-historial">Historial</a>
+ <a v-if="esAdmin && articuloSeleccionado.apertura" href="#ficha-correcciones">Correcciones y ajustes</a>
+ <a v-if="politicaControl" href="#ficha-controles">Reglas de control</a>
+</nav>
+<div class="detalle-mosaico">
+<section v-if="existenciasArea" id="ficha-ubicacion" class="context-box detalle-panel " aria-label="Existencias por ubicación">
         <h3>Existencias por área</h3>
         <p>Total institucional: <strong>{{ existenciasArea.total_institucional ?? 'Sin apertura' }} u.</strong></p>
         <p>Sin ubicación confirmada: <strong>{{ existenciasArea.sin_ubicacion_confirmada ?? 'Sin apertura' }} u.</strong></p>
@@ -1171,12 +1160,67 @@ async function registrarTransaccion() {
             {{ transferencia.cantidad }} u. de {{ transferencia.area_origen }} a {{ transferencia.area_destino }} ·
             Documento: {{ transferencia.referencia_documento }} · Encargado #{{ transferencia.encargado_id }} ·
             Registrado por #{{ transferencia.registrado_por }} ({{ fechaRegistro(transferencia.registrado_en) }})
+            <button v-if="esAdmin && transferencia.version_rectificacion" class="btn-outline btn-small" @click="iniciarRectificacionLogistica('TRANSFERENCIA', transferencia)">Rectificar transferencia</button>
             <div v-for="a in transferencia.alertas_control || []" :key="a.codigo" class="aviso-historial">{{ a.mensaje }}</div>
             <div v-if="transferencia.justificacion_alertas">Justificación: {{ transferencia.justificacion_alertas }}</div>
           </li></ul>
         </div>
       </section>
-      <section v-if="existenciasArea" class="context-box mt-4" aria-label="Custodia externa">
+<div v-if="articuloSeleccionado.apertura" id="ficha-base" class="context-box detalle-panel ">
+        <strong>{{ articuloSeleccionado.apertura.origen === 'KARDEX_HISTORICO' ? 'Base histórica fijada' : 'Apertura aprobada' }}: {{ articuloSeleccionado.apertura.cantidad_inicial }} u.</strong>
+        <p>{{ new Date(articuloSeleccionado.apertura.aprobado_en).toLocaleString('es-BO') }} · Responsable #{{ articuloSeleccionado.apertura.aprobado_por }}</p>
+        <p>Documento: {{ articuloSeleccionado.apertura.referencia_documento }}</p>
+        <p>{{ articuloSeleccionado.apertura.justificacion }}</p>
+        <p v-if="articuloSeleccionado.corte_operativo?.estado === 'BASE_DOCUMENTAL_PROVISIONAL'">
+          Base documental provisional desde {{ fechaRegistro(articuloSeleccionado.corte_operativo.fecha_inicio) }}.
+          Los movimientos reales anteriores al inicio deben conciliarse con respaldo o conteo físico.
+        </p>
+        <p v-if="articuloSeleccionado.corte_operativo?.estado === 'CONTEO_FISICO_CONCILIADO'">
+          El saldo inicial fue cotejado con un conteo físico por áreas. Los movimientos anteriores
+          que ocurrieron fuera del sistema siguen pendientes de reconstrucción documental.
+        </p>
+        <p v-if="articuloSeleccionado.diferencia_documental" role="alert" class="alert alert-error">
+          Un escaneo o corrección posterior cambió el cierre documental: base congelada
+          {{ articuloSeleccionado.diferencia_documental.saldo_base_congelada }} u., cierre disponible
+          {{ articuloSeleccionado.diferencia_documental.saldo_cierre_disponible }} u.
+          El stock vivo no cambió; revisa la diferencia antes de ajustar.
+        </p>
+      </div>
+<section v-if="!articuloSeleccionado.apertura && articuloSeleccionado.base_kardex" id="ficha-fuente" class="context-box detalle-panel ">
+        <p v-if="articuloSeleccionado.observacion_hil?.observado"><strong>Artículo observado:</strong> {{ articuloSeleccionado.observacion_hil.motivo }}<span v-if="articuloSeleccionado.observacion_hil.excluir_entrenamiento"> Queda fuera del entrenamiento histórico. Las operaciones digitales mantienen sus controles de saldo.</span></p>
+        <strong>Base de trabajo del Kárdex histórico: {{ articuloSeleccionado.base_kardex.saldo }} u.</strong>
+        <p v-if="['RECONSTRUIDO', 'HIPOTESIS', 'ANOTACION_MARGEN'].includes(articuloSeleccionado.base_kardex.origen_saldo || '')">Origen: {{ articuloSeleccionado.base_kardex.origen_saldo }}. Saldo escrito cotejado: {{ articuloSeleccionado.base_kardex.saldo_documental ?? 'vacío o no legible' }}. La reconstrucción se conserva separada de la fuente.</p>
+        <p>Fuente documental #{{ articuloSeleccionado.base_kardex.movimiento_id }} · lote #{{ articuloSeleccionado.base_kardex.lote_id }} · {{ articuloSeleccionado.base_kardex.fecha_movimiento }}.</p>
+        <p v-if="articuloSeleccionado.base_kardex.fuente_cierre">Estado del cierre: {{ articuloSeleccionado.base_kardex.fuente_cierre.estado }}<span v-if="articuloSeleccionado.base_kardex.fuente_cierre.referencia"> · Ref: {{ articuloSeleccionado.base_kardex.fuente_cierre.referencia }}</span></p>
+        <p>Este saldo documental será el punto de partida al registrar la primera operación moderna. No es un conteo físico de 2026; las hojas escaneadas permanecen intactas para auditoría.</p>
+        <p v-if="articuloSeleccionado.base_kardex.motivo_bloqueo" class="alert alert-error">{{ articuloSeleccionado.base_kardex.motivo_bloqueo }}</p>
+        <router-link :to="{ path: '/kardex-digital', query: { articulo_id: articuloSeleccionado.id } }">Ver Kárdex y evidencia</router-link>
+      </section>
+<section v-if="!articuloSeleccionado.apertura && (!articuloSeleccionado.base_kardex || !articuloSeleccionado.base_kardex.operable)" id="ficha-apertura" class="form-container detalle-panel ">
+        <h3>Saldo de apertura pendiente</h3>
+        <p>{{ articuloSeleccionado.base_kardex ? 'El cierre histórico requiere revisión. Como alternativa, registra un conteo físico documentado.' : 'Este producto no tiene cierre histórico escaneado. Registra un conteo físico documentado.' }}</p>
+        <form v-if="esAdmin" @submit.prevent="aprobarApertura">
+          <div class="form-group mt-3">
+            <label for="apertura-cantidad">Cantidad física verificada (se permite cero)</label>
+            <input id="apertura-cantidad" v-model.number="aperturaForm.cantidad" type="number" min="0" max="2147483647" step="1" required />
+          </div>
+          <div class="form-group mt-3">
+            <label for="apertura-referencia">Referencia del acta o documento de conteo</label>
+            <input id="apertura-referencia" v-model="aperturaForm.referencia_documento" minlength="3" maxlength="255" required />
+          </div>
+          <div class="form-group mt-3">
+            <label for="apertura-justificacion">Justificación del saldo</label>
+            <textarea id="apertura-justificacion" v-model="aperturaForm.justificacion" minlength="10" maxlength="2000" required></textarea>
+          </div>
+          <p><label><input v-model="aperturaForm.conteo_verificado" type="checkbox" required /> Confirmo que el conteo físico está verificado. Esta apertura se aprueba una sola vez.</label></p>
+          <button class="btn-primary" type="submit" :disabled="aprobando || !aperturaForm.conteo_verificado">{{ aprobando ? 'Aprobando...' : 'Aprobar saldo de apertura' }}</button>
+        </form>
+        <p v-else>Un administrador debe aprobar la apertura para habilitar las operaciones.</p>
+      </section>
+<section id="ficha-operaciones" class="detalle-panel"><h3>Ingresos, salidas y devoluciones</h3><p>Registra una operación con su cantidad, ubicación y respaldo.</p><button v-if="puedeOperar && (articuloSeleccionado.apertura || articuloSeleccionado.base_kardex?.operable)" class="btn-primary mt-4" @click="iniciarTransaccion">
+        + Nueva Transacción
+      </button><p v-if="!puedeOperar">Tu perfil permite consultar las operaciones.</p><p v-else-if="!articuloSeleccionado.apertura && !articuloSeleccionado.base_kardex?.operable">Primero se requiere una base documental operable o una apertura aprobada.</p></section>
+<section v-if="existenciasArea" id="ficha-custodia" class="context-box detalle-panel " aria-label="Custodia externa">
         <h3>Ferias y consignaciones</h3>
         <p>Las unidades entregadas siguen siendo institucionales mientras estén fuera. Solo una venta documentada reduce el total; el retorno las incorpora al área receptora.</p>
         <form v-if="puedeOperar && articuloSeleccionado.apertura && existenciasArea.areas.some(a => a.cantidad > 0)"
@@ -1250,10 +1294,12 @@ async function registrarTransaccion() {
             <p>{{ custodia.receptor_nombre }} · {{ custodia.ubicacion_externa }}<span v-if="custodia.ciudad">, {{ custodia.ciudad }}</span> · origen: {{ custodia.area_origen }}.</p>
             <p>Entregadas: {{ custodia.cantidad_entregada }} u. · Fuera: <strong>{{ custodia.cantidad_fuera }} u.</strong> · Vendidas: {{ custodia.cantidad_vendida }} u. · Devueltas: {{ custodia.cantidad_devuelta }} u.</p>
             <p>{{ fechaRegistro(custodia.ocurrido_en) }} · Acta: {{ custodia.referencia_documento }} · Encargado #{{ custodia.encargado_id }} · Registrado por #{{ custodia.registrado_por }} ({{ fechaRegistro(custodia.registrado_en) }})</p>
+            <button v-if="esAdmin && custodia.version_rectificacion" class="btn-outline btn-small" @click="iniciarRectificacionLogistica('ENTREGA', custodia)">Rectificar entrega</button>
             <p v-for="a in custodia.alertas_control || []" :key="a.codigo" class="aviso-historial">{{ a.mensaje }}</p>
             <p v-if="custodia.justificacion_alertas">Justificación: {{ custodia.justificacion_alertas }}</p>
             <ul v-if="custodia.eventos.length"><li v-for="evento in custodia.eventos" :key="evento.id">
               {{ evento.tipo === 'VENTA' ? 'Venta' : 'Retorno' }} #{{ evento.id }} · {{ evento.cantidad }} u. · {{ evento.comprador || evento.area_destino }} · {{ evento.referencia_documento }} · {{ fechaRegistro(evento.ocurrido_en) }}
+              <button v-if="esAdmin && evento.version_rectificacion" class="btn-outline btn-small" @click="iniciarRectificacionLogistica('EVENTO_CUSTODIA', evento)">Rectificar venta o retorno</button>
               <div v-for="a in evento.alertas_control || []" :key="a.codigo" class="aviso-historial">{{ a.mensaje }}</div>
               <div v-if="evento.justificacion_alertas">Justificación: {{ evento.justificacion_alertas }}</div>
             </li></ul>
@@ -1312,7 +1358,7 @@ async function registrarTransaccion() {
           </div>
         </div>
       </section>
-      <section v-if="conciliacionInicial" class="context-box mt-4" aria-label="Conciliación inicial">
+<section v-if="conciliacionInicial" id="ficha-conciliacion" class="context-box detalle-panel " aria-label="Conciliación inicial">
         <h3>Conciliación inicial por conteo físico</h3>
         <div v-if="conciliacionInicial.estado === 'REGISTRADA' && conciliacionInicial.registro">
           <p>Conteo del {{ conciliacionInicial.registro.fecha_conteo }}: <strong>{{ conciliacionInicial.registro.cantidad_fisica }} u.</strong>
@@ -1362,10 +1408,56 @@ async function registrarTransaccion() {
           <p v-else>Un administrador debe registrar el conteo físico.</p>
         </template>
       </section>
-      <button v-if="puedeOperar && (articuloSeleccionado.apertura || articuloSeleccionado.base_kardex?.operable)" class="btn-primary mt-4" @click="iniciarTransaccion">
-        + Nueva Transacción
-      </button>
-      <section v-if="kardexDigital" class="context-box mt-4" aria-label="Kárdex digital por artículo">
+<section v-if="esAdmin && articuloSeleccionado.apertura" id="ficha-correcciones" class="context-box detalle-panel " aria-label="Correcciones y ajustes operativos">
+        <h3>Correcciones y ajustes operativos</h3>
+        <p>Una rectificación crea un asiento vinculado y conserva el movimiento original. Si un conteo detecta una diferencia sin movimiento concreto, registra un ajuste con acta y motivo.</p>
+        <form v-if="movimientoRectificado" aria-label="Rectificar cantidad registrada" @submit.prevent="guardarRectificacion">
+          <h4>Rectificar movimiento #{{ movimientoRectificado }}</h4>
+          <div class="form-group mt-3"><label for="correccion-cantidad">Cantidad correcta (0 para revertirla)</label>
+            <input id="correccion-cantidad" v-model.number="correccionForm.cantidad_corregida" type="number" min="0" step="1" required /></div>
+          <div class="form-group mt-3"><label for="correccion-motivo">Motivo verificado</label>
+            <textarea id="correccion-motivo" v-model="correccionForm.motivo" minlength="10" maxlength="2000" required></textarea></div>
+          <div class="form-group mt-3"><label for="correccion-documento">Acta o documento de autorización</label>
+            <input id="correccion-documento" v-model="correccionForm.referencia_documento" minlength="3" maxlength="200" required /></div>
+          <button class="btn-primary mt-3" type="submit" :disabled="guardandoCorreccion">{{ guardandoCorreccion ? 'Guardando...' : 'Guardar rectificación' }}</button>
+          <button class="btn-icon" type="button" @click="movimientoRectificado = null">Cancelar</button>
+        </form>
+        <form aria-label="Registrar ajuste operativo" class="mt-4" @submit.prevent="guardarAjuste">
+          <h4>Ajuste por diferencia verificada</h4>
+          <div class="form-group mt-3"><label for="ajuste-direccion">Efecto</label>
+            <select id="ajuste-direccion" v-model="ajusteForm.direccion"><option value="ingreso">Aumentar existencias</option><option value="salida">Disminuir existencias</option></select></div>
+          <div class="form-group mt-3"><label for="ajuste-cantidad">Cantidad</label>
+            <input id="ajuste-cantidad" v-model.number="ajusteForm.cantidad" type="number" min="1" step="1" required /></div>
+          <div class="form-group mt-3"><label for="ajuste-area">Área comprobada</label>
+            <select id="ajuste-area" v-model.number="ajusteForm.area_id"><option value="">Sin ubicación confirmada</option>
+              <option v-for="area in areasOperativas" :key="area.id" :value="area.id">{{ area.nombre }}</option></select></div>
+          <div class="form-group mt-3"><label for="ajuste-encargado">Encargado</label>
+            <select id="ajuste-encargado" v-model.number="ajusteForm.encargado_id" required><option disabled value="">Selecciona</option>
+              <option v-for="persona in encargados" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option></select></div>
+          <div class="form-group mt-3"><label for="ajuste-motivo">Motivo y resultado del conteo</label>
+            <textarea id="ajuste-motivo" v-model="ajusteForm.motivo" minlength="10" maxlength="2000" required></textarea></div>
+          <div class="form-group mt-3"><label for="ajuste-documento">Acta o documento de autorización</label>
+            <input id="ajuste-documento" v-model="ajusteForm.referencia_documento" minlength="3" maxlength="200" required /></div>
+          <button class="btn-primary mt-3" type="submit" :disabled="guardandoAjuste">{{ guardandoAjuste ? 'Guardando...' : 'Registrar ajuste' }}</button>
+        </form>
+      </section>
+<details v-if="politicaControl" id="ficha-controles" class="context-box detalle-panel " aria-label="Reglas de control inmediato">
+        <summary>Reglas de control inmediato · umbrales provisionales</summary>
+        <p><router-link :to="{ path: '/alertas-inventario', query: { articulo_id: articuloSeleccionado.id } }">Ver alertas y seguimiento de este artículo</router-link></p>
+        <p>Se revisan el total institucional y las unidades de la ubicación seleccionada. Superar el stock disponible bloquea la operación; los avisos permiten confirmar una operación justificada.</p>
+        <ul>
+          <li>Usar todas las unidades disponibles o al menos {{ politicaControl.porcentaje_mayoritario }} % cuando hay {{ politicaControl.stock_minimo_mayoritario }} o más.</li>
+          <li>Cantidades de {{ politicaControl.cantidad_extrema }} unidades o más.</li>
+          <li>Cantidades desde {{ politicaControl.min_cantidad_atipica }} unidades que alcancen {{ politicaControl.factor_atipico }} veces la mediana de {{ politicaControl.min_comparables }} o más operaciones comparables.</li>
+          <li>Registro o hecho fuera de {{ String(politicaControl.hora_inicio).padStart(2, '0') }}:00–{{ String(politicaControl.hora_fin).padStart(2, '0') }}:00 en Bolivia, o registro {{ politicaControl.registro_tardio_horas }} horas después del hecho.</li>
+          <li>Posible repetición con el mismo documento, cantidad y participantes o ubicaciones dentro de {{ politicaControl.repeticion_minutos }} minutos.</li>
+        </ul>
+        <p>Los avisos ayudan a revisar errores y situaciones inusuales. La comparación usa operaciones digitales posteriores al corte; el Kárdex escaneado mantiene su función de auditoría.</p>
+      </details>
+<div v-if="esAdmin && fuenteLogistica" class="detalle-ancho"><RectificacionLogistica v-if="esAdmin && fuenteLogistica && articuloSeleccionado" :key="`${fuenteLogistica.clase}-${fuenteLogistica.registro_id}-${fuenteLogistica.version}`"
+        :articulo-id="articuloSeleccionado.id" :fuente="fuenteLogistica" :areas="areasOperativas" :encargados="encargados"
+        @cerrar="fuenteLogistica = null" @recargar="actualizarLogistica()" @guardado="actualizarLogistica(true)" /></div>
+<section v-if="kardexDigital" id="ficha-libro" class="context-box detalle-panel detalle-ancho" aria-label="Kárdex digital por artículo">
         <h3>Kárdex digital por artículo</h3>
         <p v-if="!kardexDigital.base">Aún no hay saldo de apertura ni cierre documental disponible.</p>
         <template v-else>
@@ -1394,12 +1486,16 @@ async function registrarTransaccion() {
               <td>{{ evento.descripcion }}
                 <small v-if="evento.movimiento_origen_id" class="text-muted">Entrega original #{{ evento.movimiento_origen_id }} · devuelve {{ evento.devuelto_por }}</small>
                 <small v-if="evento.corrige_movimiento_id" class="text-muted">Rectifica #{{ evento.corrige_movimiento_id }}: {{ evento.cantidad_anterior }} → {{ evento.cantidad_corregida }} u. · {{ evento.motivo_correccion }}</small>
+                <small v-if="evento.corrige_clase" class="text-muted">Rectifica {{ etiquetaLogistica(evento.corrige_clase) }} #{{ evento.corrige_registro_id }}: {{ evento.cantidad_anterior }} → {{ evento.cantidad_corregida }} u. · {{ evento.motivo_correccion }}</small>
+                <small v-for="cambio in cambiosContextoLogistico(evento.datos_previos, evento.datos_corregidos)" :key="cambio" class="text-muted">{{ cambio }}</small>
                 <small v-if="evento.custodia_id" class="text-muted">Custodia #{{ evento.custodia_id }} · {{ evento.receptor || evento.cantidad_transferida + ' u. trasladadas' }}</small>
                 <small v-if="evento.estado === 'ANULADO'" class="text-muted">Anulado · cantidad original {{ evento.cantidad_original }} u.</small>
                 <small v-for="aviso in evento.alertas_control || []" :key="aviso.codigo">{{ aviso.codigo }}: {{ aviso.mensaje }}</small>
                 <small v-if="evento.justificacion_alertas">Justificación: {{ evento.justificacion_alertas }}</small>
               </td>
-              <td>{{ evento.area_origen || '—' }}<span v-if="evento.area_destino"> → {{ evento.area_destino }}</span><small v-if="evento.clase === 'TRANSFERENCIA'">{{ evento.cantidad_transferida }} u. trasladadas</small></td>
+              <td>{{ evento.area_origen || '—' }}<span v-if="evento.area_destino"> → {{ evento.area_destino }}</span><small v-if="evento.clase === 'TRANSFERENCIA'">{{ evento.cantidad_transferida }} u. trasladadas</small>
+                <small v-for="compensacion in evento.areas_delta || []" :key="compensacion.area_id">{{ areasOperativas.find(a => a.id === compensacion.area_id)?.nombre ?? 'Área #' + compensacion.area_id }}: {{ compensacion.delta > 0 ? '+' : '' }}{{ compensacion.delta }} u.</small>
+              </td>
               <td class="num ingreso">{{ evento.ingreso || '—' }}</td>
               <td class="num salida">{{ evento.salida || '—' }}</td>
               <td class="num saldo">{{ evento.saldo_institucional }}</td>
@@ -1408,17 +1504,17 @@ async function registrarTransaccion() {
           </table></div>
         </template>
       </section>
-      
-      <section class="context-box mt-4" aria-label="Consultar trazabilidad">
+<section id="ficha-trazabilidad" class="context-box detalle-panel detalle-ancho" aria-label="Consultar trazabilidad">
         <button type="button" :aria-expanded="mostrarTrazabilidad" @click="mostrarTrazabilidad = !mostrarTrazabilidad">{{ mostrarTrazabilidad ? 'Cerrar trazabilidad' : 'Ver grafo y respaldos del artículo' }}</button>
         <TrazabilidadArticulo v-if="mostrarTrazabilidad" :key="articuloSeleccionado.id" :articulo-id="articuloSeleccionado.id" />
       </section>
-      <h3 class="mt-4">Historial de Operaciones (Modernas)</h3>
-      <p v-if="cargandoHistorial" class="text-muted">Cargando...</p>
-      <p v-else-if="movimientosModernos.length === 0" class="text-muted">
+<section id="ficha-historial" class="detalle-panel detalle-ancho" aria-label="Historial de operaciones modernas">
+<h3 class="mt-4">Historial de Operaciones (Modernas)</h3>
+<p v-if="cargandoHistorial" class="text-muted">Cargando...</p>
+<p v-else-if="movimientosModernos.length === 0" class="text-muted">
         Aún no hay operaciones modernas registradas para este artículo.
       </p>
-      <div v-else class="tabla-scroll"><table class="tabla-movimientos">
+<div v-else class="tabla-scroll"><table class="tabla-movimientos">
         <thead>
           <tr>
             <th>Fecha de operación / registro</th>
@@ -1469,40 +1565,9 @@ async function registrarTransaccion() {
           </tr>
         </tbody>
       </table></div>
-      <section v-if="esAdmin && articuloSeleccionado.apertura" class="context-box mt-4" aria-label="Correcciones y ajustes operativos">
-        <h3>Correcciones y ajustes operativos</h3>
-        <p>Una rectificación crea un asiento vinculado y conserva el movimiento original. Si un conteo detecta una diferencia sin movimiento concreto, registra un ajuste con acta y motivo.</p>
-        <form v-if="movimientoRectificado" aria-label="Rectificar cantidad registrada" @submit.prevent="guardarRectificacion">
-          <h4>Rectificar movimiento #{{ movimientoRectificado }}</h4>
-          <div class="form-group mt-3"><label for="correccion-cantidad">Cantidad correcta (0 para revertirla)</label>
-            <input id="correccion-cantidad" v-model.number="correccionForm.cantidad_corregida" type="number" min="0" step="1" required /></div>
-          <div class="form-group mt-3"><label for="correccion-motivo">Motivo verificado</label>
-            <textarea id="correccion-motivo" v-model="correccionForm.motivo" minlength="10" maxlength="2000" required></textarea></div>
-          <div class="form-group mt-3"><label for="correccion-documento">Acta o documento de autorización</label>
-            <input id="correccion-documento" v-model="correccionForm.referencia_documento" minlength="3" maxlength="200" required /></div>
-          <button class="btn-primary mt-3" type="submit" :disabled="guardandoCorreccion">{{ guardandoCorreccion ? 'Guardando...' : 'Guardar rectificación' }}</button>
-          <button class="btn-icon" type="button" @click="movimientoRectificado = null">Cancelar</button>
-        </form>
-        <form aria-label="Registrar ajuste operativo" class="mt-4" @submit.prevent="guardarAjuste">
-          <h4>Ajuste por diferencia verificada</h4>
-          <div class="form-group mt-3"><label for="ajuste-direccion">Efecto</label>
-            <select id="ajuste-direccion" v-model="ajusteForm.direccion"><option value="ingreso">Aumentar existencias</option><option value="salida">Disminuir existencias</option></select></div>
-          <div class="form-group mt-3"><label for="ajuste-cantidad">Cantidad</label>
-            <input id="ajuste-cantidad" v-model.number="ajusteForm.cantidad" type="number" min="1" step="1" required /></div>
-          <div class="form-group mt-3"><label for="ajuste-area">Área comprobada</label>
-            <select id="ajuste-area" v-model.number="ajusteForm.area_id"><option value="">Sin ubicación confirmada</option>
-              <option v-for="area in areasOperativas" :key="area.id" :value="area.id">{{ area.nombre }}</option></select></div>
-          <div class="form-group mt-3"><label for="ajuste-encargado">Encargado</label>
-            <select id="ajuste-encargado" v-model.number="ajusteForm.encargado_id" required><option disabled value="">Selecciona</option>
-              <option v-for="persona in encargados" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option></select></div>
-          <div class="form-group mt-3"><label for="ajuste-motivo">Motivo y resultado del conteo</label>
-            <textarea id="ajuste-motivo" v-model="ajusteForm.motivo" minlength="10" maxlength="2000" required></textarea></div>
-          <div class="form-group mt-3"><label for="ajuste-documento">Acta o documento de autorización</label>
-            <input id="ajuste-documento" v-model="ajusteForm.referencia_documento" minlength="3" maxlength="200" required /></div>
-          <button class="btn-primary mt-3" type="submit" :disabled="guardandoAjuste">{{ guardandoAjuste ? 'Guardando...' : 'Registrar ajuste' }}</button>
-        </form>
-      </section>
-    </div>
+</section>
+</div>
+</div>
 
     <!-- PANTALLA NUEVO PRODUCTO -->
     <div v-if="vistaActual === 'nuevo_producto'" class="form-container">
@@ -1704,11 +1769,25 @@ async function registrarTransaccion() {
 .stock-review { background: #fffbeb; color: #92400e; }
 
 /* Detalle */
-.pantalla-detalle { }
+.pantalla-detalle { min-width: 0; }
+.indice-ficha { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin: 1.25rem 0; padding: 0 0 1rem; border-bottom: 1px solid var(--border-color); }
+.indice-ficha a { display: inline-flex; align-items: center; min-height: 32px; font-size: .8rem; text-decoration: none; }
+.indice-ficha a:hover { text-decoration: underline; }
+.detalle-mosaico { column-count: 2; column-gap: 1.125rem; }
+.detalle-mosaico > .detalle-panel { break-inside: avoid; min-width: 0; max-width: none; width: 100%; margin: 0 0 1.125rem; padding: 1.25rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: var(--radius); scroll-margin-top: 1rem; }
+.detalle-panel > :is(h3, strong):first-child { margin-top: 0; }
+.detalle-panel > h3 { font-size: 1.05rem; }
+.detalle-panel p { color: var(--text-secondary); font-size: .87rem; line-height: 1.65; }
+.detalle-panel summary { color: var(--text-primary); font-weight: 500; }
+.detalle-ancho { column-span: all; min-width: 0; }
+.detalle-mosaico > .detalle-ancho { margin-top: 1.125rem; }
+@media (min-width: 1200px) { .detalle-mosaico { column-count: 3; } }
+@media (max-width: 800px) { .detalle-mosaico { column-count: 1; } }
+@media (pointer: coarse) { .indice-ficha a { min-height: 44px; } }
 .detalle-header { display: flex; justify-content: space-between; align-items: center; padding: 1.5rem; background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: var(--radius); }
 .detalle-header h2 { margin: 0 0 0.3rem 0; }
 .stock-display { text-align: center; }
-.stock-numero { font-size: 2.5rem; font-weight: 700; color: #065f46; line-height: 1; }
+.stock-numero { font-size: 2.5rem; font-weight: 500; color: var(--primary); line-height: 1; }
 .stock-label { font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.3rem; }
 
 /* Tabla movimientos */

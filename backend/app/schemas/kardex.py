@@ -4,9 +4,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 
 
 class FilaKardex(BaseModel):
-    fecha: date = Field(
-        description="Fecha del movimiento en formato YYYY-MM-DD. Si el año tiene 2 dígitos (ej 10) conviértelo al siglo correspondiente (2010)."
+    fecha: date | None = Field(default=None,
+        description="Fecha completa acreditada por la celda, YYYY-MM-DD. Devuelve null si está vacía, parcial o ilegible. Nunca completes día, mes o año por secuencia."
     )
+    fecha_documental_texto: str | None = Field(default=None, max_length=100,
+        description="Texto de la celda FECHA tal como está escrito, aunque sea parcial. null si está vacía.")
+    fecha_precision: Literal["COMPLETA", "PARCIAL", "AUSENTE", "ILEGIBLE"] | None = None
     detalle: str = Field(
         description="Texto exacto de la columna DETALLE. Limpia espacios extra pero conserva el significado. No modifiques nombres de ferias ni descripciones."
     )
@@ -30,6 +33,19 @@ class FilaKardex(BaseModel):
         description="Posición visual de la fila en la tabla de la hoja (1, 2, 3...)."
     )
 
+    @model_validator(mode="after")
+    def conservar_fecha_documental(self):
+        self.fecha_precision = self.fecha_precision or ("COMPLETA" if self.fecha else "AUSENTE")
+        if self.fecha_precision == "COMPLETA" and self.fecha is None:
+            raise ValueError("Una fecha completa requiere día, mes y año acreditados")
+        if self.fecha_precision != "COMPLETA" and self.fecha is not None:
+            raise ValueError("Una fecha parcial, ausente o ilegible debe conservar fecha=null")
+        if self.fecha_precision == "PARCIAL" and not (self.fecha_documental_texto or "").strip():
+            raise ValueError("Conserva el texto de la fecha parcial")
+        if self.fecha_precision == "AUSENTE" and (self.fecha_documental_texto or "").strip():
+            raise ValueError("Una celda con texto requiere precisión parcial o ilegible")
+        return self
+
 
 class ExtraccionKardexHoja(BaseModel):
     nombre_articulo: str = Field(
@@ -47,7 +63,9 @@ class LoteCargaCreate(BaseModel):
 class MovimientoKardexCreate(BaseModel):
     articulo_id: int
     lote_id: Optional[int] = None
-    fecha_movimiento: date
+    fecha_movimiento: date | None = None
+    fecha_documental_texto: str | None = Field(default=None, max_length=100)
+    fecha_precision: Literal["COMPLETA", "PARCIAL", "AUSENTE", "ILEGIBLE"] | None = None
     detalle: str
     referencia: Optional[str] = None
     area: Optional[str] = None
@@ -127,7 +145,8 @@ class MovimientoKardexEdit(BaseModel):
     referencia_estado: Optional[Literal["PRESENTE", "AUSENTE", "ILEGIBLE", "INCIERTA"]] = None
     requiere_auditoria_referencia: Optional[bool] = None
     fecha_movimiento: Optional[date] = None
-    decision_fecha: Optional[Literal["corregir", "confirmar_documento"]] = None
+    decision_fecha: Optional[Literal["corregir", "confirmar_documento", "ausente", "parcial", "ilegible"]] = None
+    fecha_documental_texto: str | None = Field(default=None, max_length=100)
     origen_fecha: Optional[Literal["FOTO", "HIPOTESIS", "SECUENCIA_AJUSTADA"]] = None
     motivo: str = Field(default="", max_length=1000)
     referencia: Optional[str] = Field(default=None, max_length=100)
@@ -140,4 +159,10 @@ class MovimientoKardexEdit(BaseModel):
             raise ValueError("Cambiar una fecha requiere la decisión corregir")
         if self.origen_fecha is not None and self.decision_fecha != "corregir":
             raise ValueError("El origen de fecha requiere la decisión corregir")
+        if self.decision_fecha == "parcial" and not (self.fecha_documental_texto or "").strip():
+            raise ValueError("Conserva el texto escrito de la fecha parcial")
+        if self.decision_fecha == "ausente" and (self.fecha_documental_texto or "").strip():
+            raise ValueError("Una fecha con texto no es una celda ausente")
+        if self.fecha_documental_texto is not None and self.decision_fecha not in {"corregir", "parcial", "ilegible", "ausente"}:
+            raise ValueError("El texto de fecha requiere una decisión documental")
         return self

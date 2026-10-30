@@ -1,6 +1,8 @@
 # Resumen único de revisión Human in the Loop
 
-**Estado: 18/10/2026, Bolivia.** [Sistema y datos](../README.md) · [Avances y pendientes](AVANCES_Y_PENDIENTES.md).
+**Cola inicial revisada: 18/10/2026; continuidad N01: 28/10/2026, Bolivia.** [Sistema y datos](../README.md) · [Avances y pendientes](AVANCES_Y_PENDIENTES.md).
+
+**Revalidación del 29/10:** las consultas de solo lectura conservan 117 movimientos históricos activos categorizados con marca, cero sin categorizar/recategorizar y 8.367 elegibles. Las 60 decisiones de área siguen distribuidas en 32 asignaciones inferidas, 13 equivalencias, 8 lecturas inciertas, 6 marcas y 1 efecto indeterminado. Las 693 rutas de fotos históricas activas están presentes; esto no supone un nuevo cotejo visual de todas las celdas. No se alteraron decisiones, datos ni exclusiones. La confirmación de cobertura sigue sin registros y la revisión humana analítica continúa en cero, como flujos separados del HIL documental. [Diagnóstico de cierre](../outputs/diagnostico-cierre-20261029/Diagnostico_para_terminar_el_sistema.md).
 
 Este documento sustituye los informes narrativos por lote. La fotografía, primera extracción, dato vigente y auditoría de cada caso permanecen en sus fuentes; no se eliminan porque se reduzca la documentación.
 
@@ -50,7 +52,7 @@ Resumen operativo de las 23 respuestas del titular, conservadas íntegramente en
 
 Siempre se conservan **fuente original, dato vigente y decisión de revisión**. La asistencia de Codex no se registra como aprobación de un funcionario institucional.
 
-## Categorías de los 116 casos
+## Categorías de los 116 casos iniciales
 
 | Categoría | Marcas |
 |---|---:|
@@ -94,6 +96,44 @@ La revisión asistida de la cola acordada queda cubierta. Nuevas evidencias pued
 
 Para recuperación técnica se conserva el [resultado verificable de los 116 tratamientos](../backend/backups/revision_avisos_hil_20261018/clasificacion_116_verificada.json), la [cola y estado focalizados](../backend/backups/revision_avisos_hil_20261016/estado_avisos.json) y los planes en `backend/backups/aplicacion_hil_20261014/`. Los planes 48, 58, 65, 67, 81 y 89 fueron archivados sin aplicación: no ejecutarlos. Los planes aplicados tampoco se reejecutan para reconstruir informes.
 
-El seguimiento automático anterior sigue eliminado y la importación no se reactiva. El siguiente trabajo de entrenamiento, áreas u operación requiere su propia instrucción; esta consolidación solo reduce documentos y conserva evidencia.
+El seguimiento automático anterior sigue eliminado y la importación no se reactiva. La consolidación del 18/10 no autorizaba por sí sola nuevos entrenamientos ni operaciones. El titular dio posteriormente la instrucción explícita de entrenar el 20/10.
 
 La auditoría integral posterior del 18/10 comprobó nuevamente las huellas y los 116 tratamientos categorizados: no modificó movimientos ni reabrió el cotejo. Corrigió los contadores del catálogo para excluir notas/anulaciones y mantener el mismo alcance que la bandeja HIL. La cadena completa de revisiones previas continúa almacenada y auditable, aunque ya no se repite en cada fila de los listados. El diagnóstico y sus pruebas se resumen en [el README](../README.md#auditoría-integral-del-18102026).
+
+El entrenamiento histórico autorizado del 20/10 creó la versión retrospectiva `46e3683e-0210-4917-aadf-656af9dd2e2c` con 8.367 candidatos elegibles, separados en entrenamiento, calibración y evaluación. Los 116 movimientos con marca y los 40 artículos excluidos conservan sus decisiones y restricciones; no se corrigieron cifras, fechas, fotos ni observaciones durante ese entrenamiento. Los resultados analíticos nuevos requieren su propia revisión humana y no constituyen una nueva validación HIL. El [resultado técnico](../backend/backups/entrenamiento_historico_20261020/resultado.json) documenta las comprobaciones.
+
+## Continuidad N01, 28/10/2026
+
+Por la instrucción posterior de completar las tareas de continuidad una por una, N01 incorpora representación explícita de fechas ausentes, parciales e ilegibles. Se cotejó la fotografía del movimiento 12272: el primer ingreso tiene FECHA vacía. La fecha técnica `2023-01-01` se conserva en la primera lectura y en la revisión anterior; la fecha vigente queda `null`, con precisión AUSENTE y estado SIN_FECHA_DOCUMENTAL. No se cambiaron cantidades, saldo ni originales, ni se reabrió el cotejo general.
+
+El caso tiene tratamiento **Dato ausente en el documento**, con criterio T09/N01, motivo y huella de su evidencia. Se conserva fuera del entrenamiento y de las gestiones anuales. Esto añade una fila a las 116 marcas anteriores: **400 casos tratados en total, 283 sin avisos, 117 con marca y cero sin categorizar**. Son 118 decisiones en 117 filas por el solapamiento inicial ya documentado. Las categorías y huellas anteriores siguen vigentes.
+
+La asistencia de Codex y la constatación de una celda vacía no se atribuyen a un funcionario institucional ni confirman el día del hecho. La aprobación institucional y la evaluación del detector siguen pendientes. [Evidencia y aplicación de N01](../backend/backups/n01_fechas_20261028/cambio_focalizado.json).
+
+## Continuidad de áreas históricas por instrucción posterior, 28/10/2026
+
+El titular indicó asignar por parecido, frecuencia y correlaciones y confirmó que **C+C era un área antigua de la institución, actualmente cerrada**. Esta instrucción posterior autoriza una clasificación inferida por fila; no acredita las expansiones institucionales desconocidas de otras siglas. Se conserva la lectura literal y se distingue la inferencia de una corrección fotográfica o una identidad confirmada.
+
+Se asignaron 32 movimientos a Capacitación (19), C+C (4), Galería (3), CEDOAL (3), CID (2) y Sala (1), con literal, regla, frecuencias de apoyo, alternativas, soporte y huella del plan. Se mantiene `PENDIENTE_HIL`, la exclusión analítica y la nueva categoría **Área asignada por correlación**. Los niveles ALTO/MEDIO son soporte heurístico, no probabilidades medidas. CEDOC y CEDOAL siguen separados; C+C conserva su estado inactivo y no se usa como área operativa activa.
+
+La distribución vigente de las 60 marcas de área es: 32 asignaciones inferidas, 13 equivalencias sin confirmar, 8 lecturas inciertas, 6 marcas del papel y 1 efecto indeterminado. Las otras categorías de la cola siguen vigentes. No aumentó ni disminuyó el total de 117 movimientos con marca/118 decisiones; no hay casos sin categorizar o que requieran recategorizar. Las 32 decisiones de área previas permanecen en las auditorías, junto a sus nuevos valores.
+
+Hay respaldo restaurado, ensayo previo y 32 auditorías nuevas. Se verificaron todas las filas ajenas, las fuentes, cantidades, fechas y saldos, catálogos, alias y los 927 archivos privados sin cambios. Los 8.367 elegibles y el modelo entrenado permanecen intactos y consistentes. El HIL y el grafo muestran el área inferida y la sigla conservada. Una edición de otro campo no confirma automáticamente el nodo; una decisión manual expresa posterior lo conserva como inferencia sustituida.
+
+La aplicación del 28/10 no declara terminada la confirmación institucional de áreas ni corrigió los siete nodos «Área: Ventas». Estos últimos se corrigieron después en C01, según el apartado siguiente. [Casos aplicados y restantes](../outputs/revision-areas-historicas-20261028/Asignacion_areas_historicas.md) y [comprobación posterior](../backend/backups/revision_areas_historicas_20261028/verificacion_asignacion.json).
+
+## C02: fuente de cierre y validación pendiente, 29/10/2026
+
+Se implementó la selección explícita de fila y fotografía de cierre con referencia, motivo, responsable y huella. Las decisiones desactualizadas se rechazan; las aperturas ya utilizadas se conservan. El flujo tiene controles y pruebas técnicas, pero no confirma automáticamente el archivo: permanecen 397 propuestas y cero confirmaciones documentales. Se mantienen 117 tratamientos con marca, 8.367 elegibles y dos modelos consistentes. [Detalle de C02](../outputs/cierre-documental-20261029/Cierre_documental_C02.md).
+
+## C03: administración de equivalencias, 29/10/2026
+
+Se implementó la administración de áreas, catálogo documental, alias y adscripción de cuentas con historial. Desactivar un alias impide nuevas asignaciones automáticas por esa lectura. Confirmarlo requiere cotejo explícito y motivo, y no confirma retrospectivamente las filas existentes. Permanecen 32 inferencias, otros 28 avisos de área, 117 marcas y 8.367 elegibles. C+C sigue histórica/inactiva. [Detalle de C03](../outputs/areas-catalogos-20261029/Administracion_areas_C03.md).
+
+## C01: corrección técnica del tipo de catálogo, 29/10/2026
+
+Por instrucción del titular de completar una tarea por vez se corrigieron siete nodos «Área: Ventas» a «Salida: Ventas», con estado `NO_APLICA`. Los siete movimientos estaban sin avisos HIL; siguen así. Se conservaron la columna AREA escrita, los originales y todas las decisiones documentales. La corrección es de clasificación técnica, no una nueva transcripción ni una confirmación atribuida a personal institucional.
+
+El clasificador distingue departamentos y operaciones en coincidencias exactas, alias y sugerencias, conservando las propuestas no confirmadas con HIL. Hubo respaldo restaurado, ensayo, siete auditorías y reconciliación de las demás filas/tablas. Permanecen 117 tratamientos con marca, 60 decisiones de área (incluidas las 32 inferidas) y los mismos 8.367 elegibles. Los modelos congelados siguen consistentes; cuatro filas elegibles tienen una clasificación vigente corregida para un corte posterior. No se reentrenó ni se registraron etiquetas analíticas. [Verificación de C01](../backend/backups/c01_operaciones_catalogo_20261029/verificacion.json).
+
+El cuaderno de calibración experimental preparado y ejecutado el 28/10 usa las variables y particiones congeladas del modelo del 20/10. No vuelve a incorporar las áreas inferidas ni modifica decisiones HIL o etiquetas humanas. Mantiene 0 etiquetas en el material de análisis y presenta precisión, recall, F1 y ROC-AUC como pendientes de Ground Truth independiente. Sus experimentos de umbral/árboles son diagnósticos locales; no activan versiones nuevas. [Informe de calibración](../outputs/calibracion-isolation-forest-20261028/Calibracion_Isolation_Forest.html).

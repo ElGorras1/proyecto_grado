@@ -33,5 +33,8 @@ backend/list_tables.py
 backend/.analytics/
 backend/.analytics_operativa/
 
+# Informes, datasets y evidencias generados localmente
+outputs/
+
 # Registros locales de ejecución: pueden contener datos institucionales
 *.log

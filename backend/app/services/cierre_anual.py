@@ -16,6 +16,7 @@ from app.models.inventario import (
     EventoCustodiaExterna,
     TransferenciaArea,
 )
+from app.models.rectificacion_logistica import RectificacionLogistica
 from app.models.kardex import MovimientoKardex, SolicitudCargaKardex
 from app.services.control_alertas import operacion
 from app.services.datos_analitica import huella
@@ -62,10 +63,12 @@ def reconstruir(db, gestion):
         entregas = db.query(CustodiaExterna).filter_by(articulo_id=a).all()
         eventos = db.query(EventoCustodiaExterna).filter_by(articulo_id=a).all()
         transferencias = db.query(TransferenciaArea).filter_by(articulo_id=a).all()
+        rectificaciones = db.query(RectificacionLogistica).filter_by(articulo_id=a).all()
         esperado_actual = (
             apertura.cantidad_inicial
             + sum((m.ingresos or 0) - (m.salidas or 0) for m in movimientos)
             - sum(e.cantidad for e in eventos if e.tipo == "VENTA")
+            + sum(r.delta_total for r in rectificaciones)
         )
         if (
             esperado_actual != estado["total"]
@@ -92,6 +95,7 @@ def reconstruir(db, gestion):
             ("TRANSFERENCIA", transferencias),
             ("CUSTODIA", entregas),
             ("EVENTO_CUSTODIA", eventos),
+            ("RECTIFICACION_LOGISTICA", rectificaciones),
         ):
             for f in registros:
                 if not f.registrado_en:
@@ -101,7 +105,11 @@ def reconstruir(db, gestion):
                     continue
                 antes = instante(f.registrado_en) < corte
                 if antes:
-                    fuentes.append(operacion(f, clase))
+                    fuentes.append(operacion(f, clase) if clase != "RECTIFICACION_LOGISTICA" else dict(
+                        clase=clase, id=f.id, articulo_id=a, registrado_en=instante(f.registrado_en).isoformat(),
+                        previo=f.previo, nuevo=f.nuevo, delta_total=f.delta_total,
+                        delta_custodia=f.delta_custodia, areas_delta=f.areas_delta,
+                        documento=f.referencia_documento, motivo=f.motivo))
                     if clase == "MOVIMIENTO":
                         total_al_corte += (f.ingresos or 0) - (f.salidas or 0)
                     elif clase == "CUSTODIA":
@@ -110,6 +118,9 @@ def reconstruir(db, gestion):
                         custodia_al_corte -= f.cantidad
                         if f.tipo == "VENTA":
                             total_al_corte -= f.cantidad
+                    elif clase == "RECTIFICACION_LOGISTICA":
+                        total_al_corte += f.delta_total
+                        custodia_al_corte += f.delta_custodia
                 elif not (
                     reset and clase == "MOVIMIENTO" and f.id == conciliacion.ajuste_movimiento_id
                 ):
@@ -151,6 +162,11 @@ def reconstruir(db, gestion):
                     estado["total"] += f.cantidad
                 else:
                     ubicar(f.area_destino_id, -f.cantidad)
+            elif clase == "RECTIFICACION_LOGISTICA":
+                estado["total"] -= f.delta_total
+                estado["custodia"] -= f.delta_custodia
+                for d in f.areas_delta:
+                    ubicar(d["area_id"], -d["delta"])
             elif clase == "ASIGNACION":
                 detalle = f.detalle or {}
                 if not {"cantidad", "area_id"} <= detalle.keys():

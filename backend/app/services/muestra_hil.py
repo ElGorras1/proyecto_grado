@@ -14,6 +14,9 @@ CAMPOS_DOCUMENTALES = (
 def huella_fila(movimiento) -> str:
     """Permite advertir si la fila cambió desde la decisión humana."""
     datos = {campo: getattr(movimiento, campo) for campo in CAMPOS_DOCUMENTALES}
+    for campo in ("fecha_documental_texto", "fecha_precision"):
+        if getattr(movimiento, campo, None) is not None:
+            datos[campo] = getattr(movimiento, campo)
     contenido = json.dumps(datos, sort_keys=True, default=str, ensure_ascii=False)
     return hashlib.sha256(contenido.encode()).hexdigest()
 

@@ -5,16 +5,19 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
 from app.models.activos import Activo
 from app.models.cobertura import CoberturaArticulo, TramoCobertura
-from app.models.kardex import LoteCarga, MovimientoKardex
+from app.models.kardex import LoteCarga, MovimientoKardex, SolicitudCargaKardex
 from app.models.usuario import Usuario
+from app.services.fechas_documentales import fecha_asignable_sql
 from app.services.inventario import auditar
+from app.services.cierre_documental import fuente_cierre, fila_dict, foto_huella, version_revision
+from app.services.fechas_documentales import fecha_asignable
 
 
 router = APIRouter(prefix="/kardex/cobertura", tags=["Cobertura documental"])
@@ -25,6 +28,9 @@ class EstadoCobertura(BaseModel):
     estado: Literal["SIN_CONFIRMAR", "PARCIAL", "CIERRE_CONFIRMADO"]
     referencia: str = Field(min_length=3, max_length=255)
     observacion: str = Field(min_length=10, max_length=2000)
+    cierre_movimiento_id: int | None = Field(default=None, gt=0)
+    huella_fuente_esperada: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    evidencia_revisada: bool = False
 
 
 class TramoNuevo(BaseModel):
@@ -52,7 +58,7 @@ def articulo_o_404(db: Session, articulo_id: int) -> Activo:
     return articulo
 
 
-def estado_dict(row: CoberturaArticulo | None, ultimo_lote: int | None) -> dict:
+def estado_dict(row: CoberturaArticulo | None, ultimo_lote: int | None, fuente=None) -> dict:
     if row is None:
         return {"estado": "SIN_CONFIRMAR", "referencia": None,
                 "observacion": "La cobertura todavía no ha sido revisada.",
@@ -63,7 +69,8 @@ def estado_dict(row: CoberturaArticulo | None, ultimo_lote: int | None) -> dict:
             "ultimo_lote_revisado_id": row.ultimo_lote_revisado_id,
             "revisado_por": row.revisado_por,
             "revisado_en": row.revisado_en.isoformat(),
-            "vigente": row.ultimo_lote_revisado_id == ultimo_lote}
+            "vigente": (fuente.estado == "CONFIRMADA" if fuente and row.estado == "CIERRE_CONFIRMADO"
+                        else row.ultimo_lote_revisado_id == ultimo_lote)}
 
 
 @router.get("/{articulo_id}")
@@ -77,13 +84,13 @@ def consultar_cobertura(
         m.lote_id, LoteCarga.tanda, LoteCarga.total_imagenes,
         func.count(m.id).label("filas"),
         func.count(func.distinct(m.numero_pagina)).label("paginas_con_filas"),
-        func.min(m.fecha_movimiento).label("primera_fecha"),
-        func.max(m.fecha_movimiento).label("ultima_fecha"),
+        func.min(case((fecha_asignable_sql(), m.fecha_movimiento))).label("primera_fecha"),
+        func.max(case((fecha_asignable_sql(), m.fecha_movimiento))).label("ultima_fecha"),
     ).join(LoteCarga, m.lote_id == LoteCarga.id).filter(
         m.articulo_id == articulo_id, m.estado == "ACTIVO",
     ).group_by(m.lote_id, LoteCarga.tanda, LoteCarga.total_imagenes).order_by(m.lote_id).all()
     anios = db.query(
-        func.extract("year", m.fecha_movimiento).label("gestion"), func.count(m.id),
+        case((fecha_asignable_sql(), func.extract("year", m.fecha_movimiento))).label("gestion"), func.count(m.id),
     ).filter(m.articulo_id == articulo_id, m.lote_id.isnot(None),
              m.estado == "ACTIVO").group_by("gestion").order_by("gestion").all()
     ultimo_lote = max((g.lote_id for g in grupos), default=None)
@@ -105,7 +112,9 @@ def consultar_cobertura(
                                    "movimiento_siguiente": actual.id,
                                    "saldo_esperado": saldo_esperado,
                                    "saldo_documento": actual.saldo_registrado})
-    cierre = secuencia[-1] if secuencia else None
+    fuente = fuente_cierre(db, articulo_id)
+    filas = db.query(m).filter(m.articulo_id == articulo_id, m.lote_id.isnot(None)).all()
+    cierre = fuente.cierre if fuente else None
     return {
         "articulo_id": articulo.id, "articulo": articulo.nombre,
         "evidencia_disponible": {
@@ -114,21 +123,19 @@ def consultar_cobertura(
                        "paginas_con_filas": g.paginas_con_filas,
                        "movimientos": g.filas, "primera_fecha": g.primera_fecha,
                        "ultima_fecha": g.ultima_fecha} for g in grupos],
-            "gestiones_con_filas": [{"gestion": int(y), "movimientos": n}
+            "gestiones_con_filas": [{"gestion": int(y) if y is not None else None, "movimientos": n}
                                     for y, n in anios],
             "paginas_con_filas": sum(g.paginas_con_filas for g in grupos),
             "movimientos": sum(g.filas for g in grupos),
         },
-        "revision": estado_dict(revision, ultimo_lote),
+        "revision": estado_dict(revision, ultimo_lote, fuente),
+        "fuente_cierre": fuente.publico() if fuente else None,
+        "huella_fuente": version_revision(fuente, filas),
+        "candidatos_cierre": [fila_dict(f) for f in secuencia],
         "continuidad": {
             "orden": "lote, página, fila; la fecha OCR no reordena el papel",
             "interrupciones_entre_lotes": interrupciones,
-            "cierre_disponible": {
-                "movimiento_id": cierre.id, "lote_id": cierre.lote_id,
-                "pagina": cierre.numero_pagina, "fila": cierre.orden_fila,
-                "fecha_ocr": cierre.fecha_movimiento,
-                "saldo_documental": cierre.saldo_registrado,
-            } if cierre else None,
+            "cierre_disponible": fila_dict(cierre),
         },
         "tramos": [{"id": t.id, "gestion_desde": t.gestion_desde,
                     "gestion_hasta": t.gestion_hasta, "estado": t.estado,
@@ -145,14 +152,37 @@ def revisar_cobertura(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_roles("Administrador", "Auditor")),
 ):
-    articulo_o_404(db, articulo_id)
+    if db.query(Activo).filter_by(id=articulo_id).with_for_update().first() is None:
+        raise HTTPException(404, "Artículo no encontrado")
     ultimo_lote = db.query(func.max(MovimientoKardex.lote_id)).filter(
         MovimientoKardex.articulo_id == articulo_id,
         MovimientoKardex.estado == "ACTIVO").scalar()
     if payload.estado == "CIERRE_CONFIRMADO" and ultimo_lote is None:
         raise HTTPException(409, "No hay cierre documental escaneado que confirmar")
+    fuente = fuente_cierre(db, articulo_id)
     row = db.get(CoberturaArticulo, articulo_id)
-    anterior = estado_dict(row, ultimo_lote)
+    anterior = {**estado_dict(row, ultimo_lote, fuente),
+                "fuente_cierre": fuente.publico() if fuente else None}
+    snapshot = None
+    filas = db.query(MovimientoKardex).filter(
+        MovimientoKardex.articulo_id == articulo_id, MovimientoKardex.lote_id.isnot(None)).all()
+    if (payload.huella_fuente_esperada is not None or payload.estado == "CIERRE_CONFIRMADO"):
+        if payload.huella_fuente_esperada != version_revision(fuente, filas):
+            raise HTTPException(409, "La evidencia o la revisión cambió. Recarga la cobertura y vuelve a revisar.")
+    if payload.estado == "CIERRE_CONFIRMADO":
+        if db.query(SolicitudCargaKardex.id).filter(
+            SolicitudCargaKardex.articulo_id == articulo_id,
+            SolicitudCargaKardex.estado.in_(("PENDIENTE", "PROCESANDO"))).first():
+            raise HTTPException(409, "Hay una carga pendiente; termina su revisión antes de confirmar el cierre")
+        elegido = next((m for m in filas if m.id == payload.cierre_movimiento_id and m.estado == "ACTIVO"), None)
+        if elegido is None or not payload.evidencia_revisada:
+            raise HTTPException(409, "Selecciona la fila de cierre y confirma que revisaste su foto")
+        foto = foto_huella(elegido.ruta_imagen_respaldo)
+        if not foto or not elegido.numero_pagina or not elegido.orden_fila or not fecha_asignable(elegido):
+            raise HTTPException(409, "La fila necesita foto accesible, página, orden y fecha documental completa")
+        snapshot = {**fila_dict(elegido), "foto_sha256": foto,
+                    "referencia": payload.referencia, "motivo": payload.observacion,
+                    "revisado_por": usuario.id, "revisado_en": datetime.now(UTC).isoformat()}
     if row is None:
         row = CoberturaArticulo(articulo_id=articulo_id)
         db.add(row)
@@ -162,11 +192,15 @@ def revisar_cobertura(
     row.ultimo_lote_revisado_id = ultimo_lote
     row.revisado_por = usuario.id
     row.revisado_en = datetime.now(UTC)
+    if snapshot:
+        row.cierre_movimiento_id = payload.cierre_movimiento_id
+        row.cierre_huella_fuente = fuente.huella
+        row.cierre_snapshot = snapshot
     auditar(db, usuario, request, "revisar_cobertura_documental", "cobertura_articulo",
             articulo_id, {"anterior": anterior, "nuevo": payload.model_dump(),
-                          "ultimo_lote_revisado_id": ultimo_lote})
+                          "ultimo_lote_revisado_id": ultimo_lote, "evidencia_cierre": snapshot})
     db.commit()
-    return estado_dict(row, ultimo_lote)
+    return estado_dict(row, ultimo_lote, fuente_cierre(db, articulo_id))
 
 
 @router.post("/{articulo_id}/tramos", status_code=201)

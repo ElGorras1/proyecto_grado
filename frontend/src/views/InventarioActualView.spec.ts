@@ -4,6 +4,7 @@ import InventarioActualView from './InventarioActualView.vue'
 const { get, post, auth } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), auth: { rol: 'Administrador', usuario: { id: 1 } } }))
 vi.mock('@/services/api', () => ({ default: { get, post } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
 let articulo: { id: number; codigo: string; nombre: string; stock_actual: number | null;
   apertura: Record<string, unknown> | null; base_kardex?: Record<string, unknown> }
 beforeEach(() => {

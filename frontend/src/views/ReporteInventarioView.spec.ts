@@ -61,6 +61,21 @@ beforeEach(() => {
 })
 
 describe('Reportes por gestión', () => {
+  it('consulta las fechas sin gestión confirmada sin asignarles un año', async () => {
+    const w = mount(ReporteInventarioView, { global: { stubs: ['router-link'] } })
+    await flushPromises()
+    obtener.mockResolvedValue({ data: { ...datos, gestion: null, filas: [{ ...datos.filas[0], fecha: null, fecha_documental_texto: '08/2023', fecha_precision: 'PARCIAL' }] } } as never)
+    await w.get('select[aria-label="Gestión"]').setValue('')
+    await w.get('form').trigger('submit'); await flushPromises()
+    const calls = vi.mocked(api.get).mock.calls
+    const params = calls[calls.length - 1]?.[1]?.params
+    expect(params).not.toHaveProperty('gestion')
+    expect(params).not.toHaveProperty('mes')
+    expect(w.text()).toContain('Sin fecha completa')
+    expect(w.text()).toContain('08/2023')
+    expect(w.find('[aria-label="Distribución mensual"]').exists()).toBe(false)
+    w.unmount()
+  })
   it('muestra el resumen y envía filtros combinados al backend', async () => {
     const wrapper = mount(ReporteInventarioView, { global: { stubs: ['router-link'] } })
     await flushPromises()

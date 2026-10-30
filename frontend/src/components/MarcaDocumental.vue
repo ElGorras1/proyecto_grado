@@ -5,12 +5,14 @@ defineProps<{ revision: {
   origen_saldo?: string; saldo_documental?: number | null; diferencia_saldo_documental?: number;
   diferencia_con_cadena_previa?: number; tipo_fila?: string; fecha_documental?: string | null
   origen_cantidades?: string; recuperacion_clave?: string
+  asignacion_area?: { estado: string; area: string; literal: string | null; motivo: string; soporte: string }
 } | null | undefined; tratamiento?: TratamientoHil | null }>()
 </script>
 <template>
   <details v-if="revision" class="marca-documental">
     <summary>
       Revisión documental
+      <span v-if="revision.asignacion_area?.estado === 'INFERIDA'"> · área inferida: {{ revision.asignacion_area.area }}</span>
       <span v-if="tratamiento?.estado === 'CATEGORIZADO_CON_MARCA'"> · categorizado con marca</span>
       <span v-else-if="tratamiento?.estado === 'REQUIERE_RECATEGORIZAR'"> · revisar categoría tras cambios</span>
       <span v-if="['HIPOTESIS', 'SECUENCIA_AJUSTADA'].includes(revision.origen_fecha || '')"> · fecha estimada</span>
@@ -31,6 +33,9 @@ defineProps<{ revision: {
     </div>
     <p v-else-if="tratamiento?.estado === 'REQUIERE_RECATEGORIZAR'">El dato cambió después de categorizarse. Debe revisarse el tratamiento anterior.</p>
     <p>{{ revision.motivo }}</p>
+    <p v-if="revision.asignacion_area?.estado === 'INFERIDA'"><strong>Área asignada por correlación: {{ revision.asignacion_area.area }}.</strong>
+      Lectura conservada: {{ revision.asignacion_area.literal || 'Sin texto' }}.
+      {{ revision.asignacion_area.motivo }} Es una inferencia; la identidad institucional sigue por confirmar.</p>
     <p v-if="revision.saldo_documental !== undefined">Saldo escrito cotejado: {{ revision.saldo_documental ?? 'vacío o no legible' }}</p>
     <p v-if="revision.fecha_documental !== undefined">Fecha escrita cotejada: {{ revision.fecha_documental || 'ausente o no legible' }}</p>
     <p v-if="revision.diferencia_saldo_documental">Diferencia del saldo escrito con la cadena reconstruida: {{ revision.diferencia_saldo_documental }} u.</p>

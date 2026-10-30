@@ -27,6 +27,7 @@ from app.services.control_movimientos import (
     evaluar_movimiento, confirmar_alertas, parametros_control, evaluar_ubicacion, aviso_repeticion,
 )
 from app.core.config import settings
+from app.services.rectificaciones_logisticas import estado_vigente, original
 
 
 router = APIRouter(prefix="/kardex/articulos", tags=["Custodia externa"])
@@ -95,7 +96,8 @@ def encargado_activo(db: Session, encargado_id: int) -> Usuario:
 
 
 def entrega_dict(db: Session, fila: CustodiaExterna) -> dict:
-    area = db.get(Area, fila.area_origen_id)
+    vigente, version, rect = estado_vigente(db, "ENTREGA", fila)
+    area = db.get(Area, vigente["area_origen_id"])
     return {campo: getattr(fila, campo) for campo in (
         "id", "solicitud_id", "articulo_id", "tipo", "area_origen_id",
         "receptor_nombre", "receptor_tipo", "ubicacion_externa", "ciudad",
@@ -104,19 +106,26 @@ def entrega_dict(db: Session, fila: CustodiaExterna) -> dict:
         "registrado_por", "ocurrido_en", "registrado_en", "referencia_documento",
         "observaciones",
         "alertas_control", "justificacion_alertas",
-    )} | {"area_origen": area.nombre if area else None,
+    )} | {k: v for k, v in vigente.items() if k != "cantidad"} | {
+         "cantidad_entregada": vigente["cantidad"], "cantidad_entregada_original": fila.cantidad_entregada,
+         "cantidad_ajustada": fila.cantidad_ajustada, "datos_originales": original("ENTREGA", fila),
+         "datos_vigentes": vigente, "version_rectificacion": version, "ultima_rectificacion_id": rect.id if rect else None,
+         "area_origen": area.nombre if area else None,
          "estado": "ABIERTA" if fila.cantidad_fuera else "CERRADA"}
 
 
 def evento_dict(db: Session, fila: EventoCustodiaExterna) -> dict:
-    area = db.get(Area, fila.area_destino_id) if fila.area_destino_id else None
+    vigente, version, rect = estado_vigente(db, "EVENTO_CUSTODIA", fila)
+    area = db.get(Area, vigente["area_destino_id"]) if vigente["area_destino_id"] else None
     return {campo: getattr(fila, campo) for campo in (
         "id", "solicitud_id", "custodia_id", "articulo_id", "tipo", "cantidad",
         "area_destino_id", "comprador", "encargado_id", "registrado_por",
         "ocurrido_en", "registrado_en", "referencia_documento", "observaciones",
         "total_institucional_despues", "cantidad_fuera_despues",
         "alertas_control", "justificacion_alertas",
-    )} | {"area_destino": area.nombre if area else None}
+    )} | vigente | {"area_destino": area.nombre if area else None,
+         "datos_originales": original("EVENTO_CUSTODIA", fila), "datos_vigentes": vigente, "version_rectificacion": version,
+         "ultima_rectificacion_id": rect.id if rect else None}
 
 
 @router.get("/{articulo_id}/custodias-externas")
@@ -181,7 +190,7 @@ def entregar_custodia(
         raise HTTPException(409, "Stock insuficiente en el área que entrega.")
     comparables = db.query(CustodiaExterna).filter_by(
         articulo_id=articulo_id, tipo=payload.tipo, area_origen_id=area.id)
-    cantidades_previas = [c.cantidad_entregada for c in comparables.order_by(CustodiaExterna.id.desc()).limit(20)]
+    cantidades_previas = [c.cantidad_entregada + c.cantidad_ajustada for c in comparables.order_by(CustodiaExterna.id.desc()).limit(20)]
     alertas = evaluar_movimiento(
         tipo="ingreso", cantidad=payload.cantidad, saldo=stock_area,
         fecha_local=ahora.astimezone(ZoneInfo("America/La_Paz")),
@@ -300,7 +309,7 @@ def registrar_evento(
     comparables = db.query(EventoCustodiaExterna).filter_by(
         articulo_id=articulo_id, custodia_id=custodia_id, tipo=payload.tipo,
         area_destino_id=payload.area_destino_id)
-    cantidades_previas = [c.cantidad for c in comparables.order_by(EventoCustodiaExterna.id.desc()).limit(20)]
+    cantidades_previas = [estado_vigente(db, "EVENTO_CUSTODIA", c)[0]["cantidad"] for c in comparables.order_by(EventoCustodiaExterna.id.desc()).limit(20)]
     alertas = evaluar_movimiento(
         tipo="salida" if payload.tipo == "VENTA" else "ingreso",
         cantidad=payload.cantidad, saldo=apertura.cantidad_actual,

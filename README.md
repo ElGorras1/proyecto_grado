@@ -1,6 +1,6 @@
 # Sistema de Gestión y Trazabilidad de Activos Operativos
 
-**Fundación Simón I. Patiño · Estado documental: 18/10/2026, Bolivia.**
+**Fundación Simón I. Patiño · Estado documental: 29/10/2026, Bolivia.**
 
 El sistema digitaliza Kárdex físicos y conserva su evidencia; permite corregir lecturas, consultar movimientos y gestiones, trabajar con inventario actual, transferencias y custodias, generar reportes y apoyar la auditoría mediante reglas e Isolation Forest.
 
@@ -14,7 +14,7 @@ La documentación vigente se reduce a **tres documentos, incluido este README**:
 
 ## Estado actual de los datos
 
-Última consulta documentada del 18/10, realizada en modo de solo lectura:
+Última comprobación: 29/10, después de completar N01 y aplicar 32 asignaciones inferidas de áreas históricas el 28/10. Se conservan las cantidades y el modelo histórico del 20/10. La fecha técnica del movimiento 12272 se sustituyó por una ausencia explícita con foto cotejada, primera lectura intacta y auditoría:
 
 | Indicador | Resultado |
 |---|---:|
@@ -25,14 +25,72 @@ La documentación vigente se reduce a **tres documentos, incluido este README**:
 | Movimientos elegibles según los controles analíticos actuales | **8.367** |
 | Artículos representados entre los elegibles | **356** |
 | Gestiones de los elegibles | **2005–2025** |
-| Cola de movimientos observados HIL tratada | 399 |
+| Movimientos HIL tratados, incluida la ausencia documental de N01 | 400 |
 | Movimientos de esa cola sin avisos | 283 |
-| Movimientos categorizados con marca conservada | 116 |
+| Movimientos categorizados con marca conservada | 117 |
 | Avisos sin categorizar | **0** |
 
 Las tres tandas del escaneo previsto fueron incorporadas. La cobertura total del archivo físico requiere una comprobación institucional; no debe mantenerse como actual la antigua estimación de 30–40 % pendiente. Las cantidades de catálogo, lotes, fotos y movimientos son indicadores diferentes.
 
-**Categorizar no confirma los datos inciertos.** Los 116 movimientos marcados siguen excluidos de la selección analítica. Los 8.367 elegibles tampoco equivalen a una validación humana exhaustiva de todo el archivo: son el conjunto que supera los controles actuales, antes de separar entrenamiento, calibración y evaluación.
+La revisión de cierre del 29/10 confirmó 693 rutas de imágenes históricas presentes, cero registros huérfanos, cero posiciones duplicadas y distribución consistente en las dos aperturas. Hay 397 cierres calculados, 359 bases que pasan controles automáticos y 38 bloqueadas; no hay confirmaciones de cobertura registradas. Las dos aperturas suman 26 unidades sin ubicación asignada. El [diagnóstico de cierre](outputs/diagnostico-cierre-20261029/Diagnostico_para_terminar_el_sistema.md) ordena las correcciones y validaciones. Su revisión inicial fue de solo lectura; por instrucción posterior, C01 se completó y se implementó el flujo C02; las confirmaciones documentales y la cobertura física siguen pendientes.
+
+**Categorizar no confirma los datos inciertos.** Los 117 movimientos marcados siguen excluidos de la selección analítica. Los 8.367 elegibles tampoco equivalen a una validación humana exhaustiva de todo el archivo: son el conjunto que supera los controles actuales, antes de separar entrenamiento, calibración y evaluación.
+
+### Fechas documentales: N01 completada el 28/10/2026
+
+El extractor y la base admiten fechas históricas completas, parciales, ausentes e ilegibles. Conservan el texto escrito y la precisión; una fecha incompleta permanece `null`, sin rellenar día, mes o año. Las operaciones digitales siguen exigiendo una fecha. El HIL permite registrar la ausencia o la lectura parcial con motivo y conserva la primera extracción.
+
+Los reportes ofrecen **Sin gestión confirmada** y la trazabilidad **Sin fecha confirmada**. Las fechas técnicas o hipotéticas conservadas no alimentan filtros anuales ni se muestran como fecha del hecho en el grafo. Las filas sin fecha completa quedan fuera del entrenamiento y del cierre documental operable. El dataset de consulta conserva `null`, la procedencia y la precisión; los cortes antiguos del modelo permanecen congelados.
+
+Se cotejó la foto del movimiento 12272, cuya celda FECHA está vacía. Su fecha vigente ahora es ausente; `2023-01-01` permanece en la primera lectura, el antecedente y la auditoría. Solo cambió esa fila y se añadió una auditoría. Se mantienen los 11.918 registros, los 8.367 elegibles, las decisiones anteriores, los saldos y los modelos. El caso agrega una marca **Dato ausente en el documento**, con 117 marcas vigentes y cero avisos sin categorizar.
+
+La migración actual es `r83d42fea057`. Se ensayó con upgrade/downgrade/upgrade en una restauración del respaldo previo, con reconciliación de filas y bloqueo de una reversión que perdería nuevas lecturas. Evidencias en [el expediente de N01](backend/backups/n01_fechas_20261028/resultado_aplicacion.json). Esta tarea no completa N02 ni certifica que todas las fechas del archivo hayan sido cotejadas.
+
+### Áreas históricas: asignación por correlación del 28/10/2026
+
+Por instrucción posterior del titular se asignaron 32 de los 60 movimientos con aviso de área usando parecido, familias de variantes y frecuencias del artículo, la hoja y el archivo. Se confirmó la existencia de C+C como área antigua cerrada; se conserva inactiva. Las asignaciones concretas se marcan **Área asignada por correlación**: 19 a Capacitación, 4 a C+C, 3 a Galería, 3 a CEDOAL, 2 a CID y 1 a Sala. Los otros 28 casos no tienen una asignación suficiente con este criterio.
+
+La clasificación inferida se muestra en HIL y trazabilidad junto al texto original, que no se reescribe. Las 32 filas conservan marca y exclusión; no se confunden con equivalencias institucionales confirmadas. No se crearon alias globales ni se fusionaron CEDOC y CEDOAL. Se mantienen 117 movimientos con marca y 8.367 elegibles. Hay respaldo restaurado, ensayo y 32 auditorías; [resultado con casos](outputs/revision-areas-historicas-20261028/Asignacion_areas_historicas.md) y [comprobación de solo lectura](backend/backups/revision_areas_historicas_20261028/verificacion_asignacion.json). Los siete nodos «Área: Ventas» se corrigieron posteriormente en C01, el 29/10.
+
+### C01 completada: operaciones del catálogo, 29/10/2026
+
+El clasificador distingue el tipo del catálogo en coincidencias exactas, alias y sugerencias; reserva «Área:» para departamentos y conserva la incertidumbre de los alias no confirmados. C+C continúa inactiva y disponible para interpretar el histórico. Las operaciones catalogadas con dirección incompatible requieren revisión.
+
+Tras respaldo completo restaurado y ensayo se corrigieron siete filas de «Área: Ventas» a «Salida: Ventas», con estado `NO_APLICA` y siete auditorías. Se conservaron AREA escrita, originales, fechas, cantidades, saldos y las demás filas/tablas. Hay cero operaciones del catálogo etiquetadas como área. Pasaron 73 pruebas focalizadas y diez GET sobre PostgreSQL; permanecen los 117 tratamientos, 8.367 elegibles y 927 archivos privados. Los modelos y sus cortes congelados siguen consistentes; cuatro filas elegibles tendrán su nueva clasificación en un corte posterior, sin reentrenamiento automático. [Aplicación](backend/backups/c01_operaciones_catalogo_20261029/resultado.json) y [verificación](backend/backups/c01_operaciones_catalogo_20261029/verificacion.json).
+
+### C02 implementada: selección de fuente documental, 29/10/2026
+
+En Kárdex → Cobertura documental, Administrador/Auditor puede seleccionar la fila que acredita el cierre, abrir su foto y registrar el cotejo con referencia y motivo. Se conservan la evidencia, su huella y la autoría. La misma fuente se utiliza en inventario, apertura, libro digital, dashboard e informe institucional. Si cambia la evidencia o se importa una página antigua posteriormente, el cierre elegido se conserva y exige revisión; las aperturas utilizadas permanecen fijas.
+
+La migración s94e53afb168 fue ensayada en una restauración y aplicada sin modificar datos existentes. Pasaron 331 pruebas backend (1 omitida), 86 frontend, la compilación y nueve GET con PostgreSQL. Permanecen 397 propuestas, cero confirmaciones, 38 bases bloqueadas y 8.367 elegibles. La aprobación institucional de fuentes y la cobertura física aún faltan. [Detalle y uso de C02](outputs/cierre-documental-20261029/Cierre_documental_C02.md).
+
+### C03 implementada: áreas y catálogos, 29/10/2026
+
+Desde Inicio → Áreas y catálogos se administran ubicaciones operativas, catálogo documental, alias y adscripción de cuentas, con historial consultable. Administrador escribe y Auditor consulta. Las bajas protegen stock, custodias y usuarios activos; el uso del área se serializa con la baja. Se conservan las identidades utilizadas y se rechazan versiones desactualizadas.
+
+La migración t05f64b0c279 fue ensayada y aplicada sin cambiar datos previos: dos áreas registradas, solo Galería activa; Cedoal de baja; C+C histórica/inactiva. Siguen 64 alias, 32 inferencias y 28 avisos restantes, con 117 marcas HIL y 8.367 elegibles. Faltan validación institucional, adscripciones reales y matriz de permisos. [Uso y evidencia de C03](outputs/areas-catalogos-20261029/Administracion_areas_C03.md).
+
+### C04 implementada: rectificaciones logísticas, 29/10/2026
+
+Inventario actual permite rectificar transferencias, entregas externas y sus ventas/retornos con autorización de Administrador. Se conservan los datos originales y se añaden compensaciones vinculadas, con versión revisada, documento, motivo e idempotencia. Se controlan unidades disponibles, hechos posteriores, pendiente externo, áreas activas y cierre del periodo.
+
+Libro, CSV, grafo, informe y balances anuales incorporan las compensaciones; una corrección posterior no altera el balance del corte anterior. La migración u16a75c1d380 se ensayó y aplicó sin modificar datos existentes. Los escenarios PostgreSQL se revirtieron en QA; siguen cero rectificaciones institucionales, 117 marcas HIL y 8.367 elegibles. C05 debe validar el circuito con personal y fuentes reales. [Uso y evidencia de C04](outputs/rectificaciones-logisticas-20261029/Rectificaciones_logisticas_C04.md).
+
+### C05 preparada: inventario y circuito técnico, 29/10/2026
+
+Inicio → Preparación del inventario permite consultar pendientes, abrir el artículo y preparar una ficha imprimible para el conteo. Administrador, Auditor y Operador pueden consultar; la ficha deja en blanco cantidades contadas, responsables y firmas, y no guarda ni aprueba existencias.
+
+Las 26 unidades sin ubicación se desglosan en **20 de «PRUEBA E91159»**, cuya referencia también dice «PRUEBA», y **6 de «Testimonios de la literatura boliviana, vol. 2»**. La marca por nombre exige cotejo: no elimina ni excluye automáticamente cantidades. Las otras 6 son un saldo registrado, pendiente de conteo físico y ubicación; existe una operación posterior, por lo que corresponde conservar la apertura y documentar el ajuste que resulte, sin reiniciar mediante conciliación inicial. Solo Galería está activa.
+
+El circuito conectado de 14 etapas se verificó en una base PostgreSQL aislada: conciliación, ingreso, venta, devolución, transferencia, entrega, venta/retorno externo y cuatro rectificaciones. También se probaron cierre, bloqueo de escrituras, reapertura y segunda versión del balance. No hay nueva migración en C05; continúa u16a75c1d380. Se conservan los registros institucionales y los 927 archivos privados. El conteo y la aceptación con personal, las actas y el cotejo documental siguen pendientes. [Guía, protocolo y resultados](outputs/preparacion-inventario-20261029/Preparacion_y_piloto_C05.md).
+
+### C06 implementada: validación del proyecto, 29/10/2026
+
+Inicio → Validación del proyecto separa concordancia documental y evaluación del detector. Administrador/Auditor prepara un estudio de hasta 100 filas, con población, selección reproducible, protocolo y fotos congelados mediante huellas. Otra cuenta realiza el cotejo; quien preparó el estudio o entrenó la versión no puede etiquetarla. Operador consulta. En esta pantalla se omiten predicción, puntuación y decisiones analíticas/HIL anteriores; la independencia profesional requiere comprobar el protocolo y los accesos externos.
+
+Las etiquetas nuevas se conservan aparte, con autor, fecha, referencia, declaración de independencia, historial y control de versiones. La concordancia por fila o precisión/recall/F1 de la muestra se calculan únicamente al completar conclusiones válidas y conservar la evidencia. Los errores documentales y casos no concluyentes siguen pendientes; una división indefinida se mantiene sin porcentaje. Se exportan datos y etiquetas de la muestra, población de identificadores y huella verificable. La concordancia vigente no mide exactitud del OCR original ni acredita publicación institucional.
+
+Pasaron 372 pruebas backend (una omitida en SQLite), 110 frontend y 160 en PostgreSQL sin omisiones, además de compilación, pantalla y cinco GET de solo lectura. Se conservan datos, modelos y 927 archivos privados, sin migración nueva. Hay cero estudios/etiquetas reales; las métricas humanas, el diseño temporal suficiente y la aprobación del dataset siguen pendientes. [Uso, protocolo y límites de C06](outputs/validacion-proyecto-20261029/Validacion_independiente_C06.md).
 
 ## Cómo funciona
 
@@ -48,8 +106,29 @@ Las tres tandas del escaneo previsto fueron incorporadas. La cobertura total del
 | Kárdex digital y grafo | Libro por artículo, saldos, integridad, CSV y trazabilidad con documentos y fotografías. El grafo no acredita por sí solo un recorrido físico. |
 | Reportes y gestiones | Consulta y descarga de inventario y movimientos por período; informe institucional y cierres versionados con sus condiciones de aprobación. |
 | Alertas y seguimiento | Reglas inmediatas y casos con evidencia, asignación, revisión y conclusión. Cerrar un caso no corrige el stock. |
-| Analítica histórica | Isolation Forest, cortes y versiones, puntuaciones, fuentes y evaluación. El módulo existe; falta entrenar y evaluar una versión nueva con el corte depurado actual. |
+| Analítica histórica | Nueva versión retrospectiva entrenada y verificada el 20/10 con el corte depurado actual; evaluación humana y calibración institucional pendientes. |
 | Analítica digital | Modelo distinto para operaciones posteriores al corte, con horas y contexto verificables. Su preparación y activación requieren datos suficientes y revisión. |
+
+### Entrenamiento histórico del 20/10/2026
+
+Por instrucción del titular se entrenó la versión **`46e3683e-0210-4917-aadf-656af9dd2e2c`**, completada con 200 árboles, semilla 42 y porcentaje provisional de revisión del 5 %. El corte comprende 8.367 candidatos de 356 artículos, de 2005–2025. Los lotes y sus duplicados exactos se mantienen agrupados; las referencias estadísticas se ajustan exclusivamente con entrenamiento.
+
+| Partición | Movimientos | Alertas |
+|---|---:|---:|
+| Entrenamiento | 5.030 | 165 |
+| Calibración | 1.722 | 83 |
+| Evaluación reservada | 1.615 | 111 |
+| Total puntuado | 8.367 | 359 |
+
+El umbral es **0,6115351601984308**; las 359 alertas incluyen entrenamiento y calibración, por lo que no deben presentarse como 359 hallazgos de evaluación independiente. Las 111 alertas reservadas requieren revisión humana. En evaluación, 1.376/1.615 filas carecen de referencia propia de artículo/dirección en entrenamiento y utilizan el respaldo global; esto limita la interpretación y debe acompañar la evaluación de utilidad. La estabilidad entre semillas no demuestra precisión ni fraude.
+
+La integridad de resultados y la reproducción del artefacto quedaron **CONSISTENTES**. Solo cambiaron las tablas de versiones, resultados analíticos y auditoría; los movimientos, artículos, tratamientos HIL, la versión anterior y los 926 archivos privados preexistentes permanecieron intactos. Se conservan el [manifiesto del entrenamiento](backend/backups/entrenamiento_historico_20261020/manifiesto.json), [dataset candidato con particiones](backend/backups/entrenamiento_historico_20261020/dataset_candidato.jsonl), [diccionario](backend/backups/entrenamiento_historico_20261020/diccionario.json) y [evaluación técnica independiente](backend/backups/entrenamiento_historico_20261020/evaluacion_independiente.json). Son evidencias locales privadas; su preparación técnica no equivale a aprobación institucional.
+
+Se mantuvieron excluidos los 40 artículos observados, sus 2.368 movimientos activos y los 116 casos HIL con marca. Esta versión es **retrospectiva**: el corte temporal para evaluar 2025 conserva solo 3 filas de calibración y 3 de evaluación después de purgar documentos que cruzan períodos. El modelo operativo digital continúa sin entrenamiento ni activación.
+
+### Cuaderno de calibración experimental del 28/10/2026
+
+El 28/10 se añadió un [notebook ejecutado de calibración experimental](outputs/calibracion-isolation-forest-20261028/Calibracion_Isolation_Forest.ipynb), su [informe con gráficos para presentar](outputs/calibracion-isolation-forest-20261028/Calibracion_Isolation_Forest.html) y un [paquete compatible con Colab](outputs/calibracion-isolation-forest-20261028/Paquete_calibracion_IF.zip). Reproduce las puntuaciones y el umbral del corte congelado; compara siete capacidades de revisión y doce combinaciones de árboles/semillas en entrenamiento/calibración. Muestra estabilidad, carga, distribuciones y cobertura de referencias, sin atribuirles precisión supervisada. Es un experimento local separado: no cambia el modelo ni sus revisiones humanas.
 
 ### Tres distinciones que deben mantenerse
 

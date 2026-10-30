@@ -25,7 +25,9 @@ interface Movimiento {
   id: number
   lote_id: number | null
   tanda: number | null
-  fecha_movimiento: string
+  fecha_movimiento: string | null
+  fecha_documental_texto?: string | null
+  fecha_precision?: string | null
   detalle: string
   referencia: string | null
   area: string | null
@@ -142,11 +144,18 @@ const auth = useAuthStore()
 const route = useRoute()
 const puedeCorregir = computed(() => auth.rol === 'Administrador' || auth.rol === 'Operador')
 const puedeRevisarCobertura = computed(() => auth.rol === 'Administrador' || auth.rol === 'Auditor')
+interface FilaCierre {
+  movimiento_id: number; lote_id: number; pagina: number; orden_pagina: number; fila: number
+  fecha_ocr: string | null; saldo_documental: number; ruta_imagen_respaldo: string | null
+}
 interface Cobertura {
+  huella_fuente: string
+  candidatos_cierre: FilaCierre[]
+  fuente_cierre: { estado: string; seleccion: FilaCierre | null; propuesta: FilaCierre | null; revisado_por: number | null; revisado_en: string | null } | null
   continuidad: { orden: string; cierre_disponible: { lote_id: number; pagina: number; fecha_ocr: string; saldo_documental: number } | null; interrupciones_entre_lotes: { lote_anterior: number; lote_siguiente: number; saldo_esperado: number; saldo_documento: number }[] }
   evidencia_disponible: {
     lotes: { lote_id: number; tanda: number; paginas_declaradas: number; paginas_con_filas: number; movimientos: number }[]
-    gestiones_con_filas: { gestion: number; movimientos: number }[]
+    gestiones_con_filas: { gestion: number | null; movimientos: number }[]
     paginas_con_filas: number
     movimientos: number
   }
@@ -155,21 +164,37 @@ interface Cobertura {
 }
 const cobertura = ref<Cobertura | null>(null)
 const revisionCobertura = ref({ estado: 'SIN_CONFIRMAR', referencia: '', observacion: '' })
+const filaCierre = ref<number | null>(null)
+const evidenciaCierreRevisada = ref(false)
+const candidatoCierre = computed(() => cobertura.value?.candidatos_cierre?.find(f => f.movimiento_id === filaCierre.value))
+watch(filaCierre, () => { evidenciaCierreRevisada.value = false })
+let consultaCobertura = 0
 const tramoCobertura = ref({ gestion_desde: new Date().getFullYear(), gestion_hasta: new Date().getFullYear(), estado: 'PENDIENTE', paginas_faltantes: '', descripcion: '', referencia: '' })
 const guardandoCobertura = ref(false)
 async function cargarCobertura() {
   if (!articuloSeleccionado.value) return
+  const id = articuloSeleccionado.value.id
+  const consulta = ++consultaCobertura
+  cobertura.value = null
+  evidenciaCierreRevisada.value = false
   try {
-    cobertura.value = (await api.get(`/kardex/cobertura/${articuloSeleccionado.value.id}`)).data
+    const datos = (await api.get(`/kardex/cobertura/${id}`)).data
+    if (consulta !== consultaCobertura || articuloSeleccionado.value?.id !== id) return
+    cobertura.value = datos
+    filaCierre.value = datos.fuente_cierre?.estado !== 'PROPUESTA' ? datos.fuente_cierre?.seleccion?.movimiento_id ?? null : null
     const r = cobertura.value?.revision
     if (r) revisionCobertura.value = { estado: r.estado, referencia: r.referencia ?? '', observacion: r.observacion === 'La cobertura todavía no ha sido revisada.' ? '' : r.observacion }
-  } catch { errorMsg.value = 'No se pudo consultar la cobertura documental.' }
+  } catch { if (consulta === consultaCobertura && articuloSeleccionado.value?.id === id) errorMsg.value = 'No se pudo consultar la cobertura documental.' }
 }
 async function guardarRevisionCobertura() {
   if (!articuloSeleccionado.value) return
   guardandoCobertura.value = true
   try {
-    await api.put(`/kardex/cobertura/${articuloSeleccionado.value.id}/revision`, revisionCobertura.value)
+    await api.put(`/kardex/cobertura/${articuloSeleccionado.value.id}/revision`, {
+      ...revisionCobertura.value, cierre_movimiento_id: filaCierre.value,
+      huella_fuente_esperada: cobertura.value?.huella_fuente,
+      evidencia_revisada: evidenciaCierreRevisada.value,
+    })
     await cargarCobertura()
     mensajeExito.value = 'Revisión de cobertura registrada.'
   } catch (err: any) { errorMsg.value = err.response?.data?.detail ?? 'No se pudo registrar la revisión.' }
@@ -512,7 +537,7 @@ function verFoto(ruta: string | null) {
       <label>Estado documental <select v-model="filtroObservacion"><option value="todos">Todos</option><option value="sin_observacion">Sin observación especial</option><option value="observados">Observados</option></select></label>
 
       <div class="lista-articulos">
-        <div v-for="art in articulosFiltrados" :key="art.id" class="articulo-card" @click="seleccionarArticulo(art)">
+        <button v-for="art in articulosFiltrados" :key="art.id" type="button" class="articulo-card" @click="seleccionarArticulo(art)">
           <div class="art-header">
             <div class="art-codigo">{{ art.codigo }}</div>
             <div class="art-badges">
@@ -523,7 +548,7 @@ function verFoto(ruta: string | null) {
           </div>
           <div class="art-nombre">{{ art.nombre }}</div>
           <small v-if="art.observacion_hil?.observado">Observado<span v-if="art.observacion_hil.excluir_entrenamiento"> · fuera del entrenamiento histórico</span></small>
-        </div>
+        </button>
         <div v-if="articulosFiltrados.length === 0" class="empty-state">No se encontraron artículos que coincidan.</div>
       </div>
     </div>
@@ -656,7 +681,7 @@ function verFoto(ruta: string | null) {
           <tbody>
             <tr v-for="mov in movimientosMostrados" :key="mov.id" :class="{'fila-error': mov.tiene_error_saldo, 'fila-dudosa': mov.requiere_auditoria_nodo || mov.requiere_auditoria_referencia}">
               <td><strong>Tanda {{ mov.tanda }}</strong><br/>Escaneo {{ numeroEscaneo(mov.lote_id) }}<br/><small>Foto {{ mov.numero_pagina }}<span v-if="mov.orden_pagina_validado"> · orden validado {{ mov.orden_pagina_validado }}</span></small></td>
-              <td>{{ mov.fecha_movimiento }}<small v-if="mov.tiene_error_fecha" class="fecha-hallazgo">{{ mov.fecha_estado === 'PENDIENTE_HIL' ? 'Fecha por revisar' : 'Fecha revisada: hallazgo conservado' }}</small></td>
+              <td>{{ mov.fecha_movimiento || 'Sin fecha completa' }}<small v-if="mov.fecha_documental_texto">Escrito: {{ mov.fecha_documental_texto }}</small><small v-if="mov.fecha_estado === 'ESTIMADA_HIL'" class="fecha-hallazgo">Fecha técnica · sin gestión confirmada</small><small v-if="mov.tiene_error_fecha" class="fecha-hallazgo">{{ mov.fecha_estado === 'PENDIENTE_HIL' ? 'Fecha por revisar' : mov.fecha_estado }}</small></td>
               <td>
                 <strong>{{ mov.detalle }}</strong><br/>
                 <span class="ref">Ref: {{ mov.referencia || '-' }} | Área: {{ mov.area || '-' }}</span>
@@ -705,7 +730,7 @@ function verFoto(ruta: string | null) {
                 <span v-for="tipo in err.tipos_alerta" :key="tipo" class="alerta-tipo">{{ tipo }}</span>
                 <small class="fecha-hallazgo">{{ err.tratamiento_hil?.etiqueta ?? 'Por categorizar' }}</small>
               </td>
-              <td><strong>Tanda {{ err.tanda }}</strong><br/>{{ err.fecha_movimiento }}<small class="fecha-hallazgo">{{ err.fecha_estado }}</small><small v-if="err.fecha_original !== err.fecha_movimiento">Original: {{ err.fecha_original }}</small></td>
+              <td><strong>Tanda {{ err.tanda }}</strong><br/>{{ err.fecha_movimiento || 'Sin fecha completa' }}<small v-if="err.fecha_documental_texto">Escrito: {{ err.fecha_documental_texto }}</small><small class="fecha-hallazgo">{{ err.fecha_estado }}</small><small v-if="err.fecha_original !== err.fecha_movimiento">Primera lectura: {{ err.fecha_original || 'Sin fecha' }}</small></td>
               <td class="detalle-col">
                 <strong>Detalle:</strong> {{ err.detalle || '-' }} <br/>
                 <MarcaDocumental :revision="err.revision_documental" :tratamiento="err.tratamiento_hil" />
@@ -728,6 +753,7 @@ function verFoto(ruta: string | null) {
       <!-- TAB 3: GRAFO VISUAL -->
       <div v-else-if="subPestaña === 'cobertura'" class="form-container">
         <h3>Cobertura documental</h3>
+        <button class="btn-outline btn-small" :disabled="guardandoCobertura" @click="cargarCobertura">Actualizar evidencia</button>
         <ObservacionHilArticulo v-if="articuloSeleccionado" :key="articuloSeleccionado.id" :articulo-id="articuloSeleccionado.id" :estado="articuloSeleccionado.observacion_hil" :editable="puedeRevisarCobertura" @guardado="estado => { if (articuloSeleccionado) articuloSeleccionado.observacion_hil = estado }" />
         <p>Las páginas y gestiones observadas muestran lo que se digitalizó. No prueban que el archivo del artículo esté completo.</p>
         <div v-if="cobertura">
@@ -735,9 +761,9 @@ function verFoto(ruta: string | null) {
             {{ cobertura.evidencia_disponible.movimientos }} movimientos, en
             {{ cobertura.evidencia_disponible.lotes.length }} escaneos.</p>
           <p><strong>Gestiones observadas:</strong>
-            {{ cobertura.evidencia_disponible.gestiones_con_filas.map(g => g.gestion).join(', ') || 'ninguna' }}.
+            {{ cobertura.evidencia_disponible.gestiones_con_filas.map(g => g.gestion ?? 'Sin gestión confirmada').join(', ') || 'ninguna' }}.
           </p>
-          <p v-if="cobertura.continuidad.cierre_disponible"><strong>Último saldo escaneado:</strong>
+          <p v-if="cobertura.continuidad.cierre_disponible"><strong>Saldo de cierre disponible:</strong>
             {{ cobertura.continuidad.cierre_disponible.saldo_documental }} · lote
             {{ cobertura.continuidad.cierre_disponible.lote_id }}, hoja
             {{ cobertura.continuidad.cierre_disponible.pagina }}. Es una base documental, no un conteo físico.</p>
@@ -751,10 +777,22 @@ function verFoto(ruta: string | null) {
             </li>
           </ul>
           <p><strong>Revisión:</strong> {{ cobertura.revision.estado }}
-            <span v-if="!cobertura.revision.vigente && cobertura.revision.revisado_en"> · desactualizada por escaneos posteriores</span>
+            <span v-if="!cobertura.revision.vigente && cobertura.revision.revisado_en"> · requiere revisar la evidencia o su vigencia</span>
             <span v-if="!cobertura.revision.revisado_en"> · aún sin revisión humana</span>
           </p>
           <p v-if="cobertura.revision.referencia">{{ cobertura.revision.observacion }} · Ref: {{ cobertura.revision.referencia }}</p>
+          <p v-if="cobertura.fuente_cierre"><strong>Fuente del cierre:</strong> {{ cobertura.fuente_cierre.estado }}
+            <span v-if="cobertura.fuente_cierre.revisado_por"> · responsable #{{ cobertura.fuente_cierre.revisado_por }} · {{ cobertura.fuente_cierre.revisado_en }}</span>
+          </p>
+          <p v-if="cobertura.fuente_cierre && ['DESACTUALIZADA', 'RETIRADA'].includes(cobertura.fuente_cierre.estado)" class="alert alert-warning">
+            La selección anterior se conserva y requiere revisión. Las aperturas ya utilizadas mantienen su base.
+          </p>
+          <p v-if="cobertura.fuente_cierre?.propuesta && cobertura.fuente_cierre.propuesta.movimiento_id !== cobertura.fuente_cierre.seleccion?.movimiento_id">
+            Propuesta por orden de carga: lote {{ cobertura.fuente_cierre.propuesta.lote_id }}, hoja {{ cobertura.fuente_cierre.propuesta.pagina }},
+            fila {{ cobertura.fuente_cierre.propuesta.fila }} · {{ cobertura.fuente_cierre.propuesta.fecha_ocr }} · saldo {{ cobertura.fuente_cierre.propuesta.saldo_documental }}.
+            Revisa su posición en el archivo antes de sustituir el cierre.
+            <button v-if="cobertura.fuente_cierre.propuesta.ruta_imagen_respaldo" class="btn-outline btn-small" @click="verFoto(cobertura.fuente_cierre.propuesta.ruta_imagen_respaldo)">Ver foto de la propuesta</button>
+          </p>
           <h4>Periodos declarados</h4>
           <ul v-if="cobertura.tramos.length">
             <li v-for="tramo in cobertura.tramos" :key="tramo.id">
@@ -773,9 +811,23 @@ function verFoto(ruta: string | null) {
                 <option value="CIERRE_CONFIRMADO">Último cierre documental confirmado</option>
               </select>
             </div>
+            <template v-if="revisionCobertura.estado === 'CIERRE_CONFIRMADO'">
+              <div class="form-group"><label for="fila-cierre">Fila que acredita el cierre documental</label>
+                <select id="fila-cierre" v-model="filaCierre">
+                  <option :value="null">Seleccionar una fila tras revisar las hojas</option>
+                  <option v-for="fila in cobertura.candidatos_cierre" :key="fila.movimiento_id" :value="fila.movimiento_id">
+                    Lote {{ fila.lote_id }} · hoja {{ fila.pagina }} · orden {{ fila.orden_pagina }} · fila {{ fila.fila }} · {{ fila.fecha_ocr ?? 'sin fecha' }} · saldo {{ fila.saldo_documental }}
+                  </option>
+                </select>
+              </div>
+              <button v-if="candidatoCierre?.ruta_imagen_respaldo" class="btn-outline btn-small" @click="verFoto(candidatoCierre.ruta_imagen_respaldo)">Ver foto de la fila seleccionada</button>
+              <label><input v-model="evidenciaCierreRevisada" type="checkbox" :disabled="!candidatoCierre?.ruta_imagen_respaldo" />
+                Revisé la foto y el periodo y confirmo que esta fila acredita el cierre.
+              </label>
+            </template>
             <div class="form-group"><label>Referencia de revisión</label><input v-model="revisionCobertura.referencia" placeholder="Acta, carpeta o documento" /></div>
             <div class="form-group"><label>Observación</label><textarea v-model="revisionCobertura.observacion" placeholder="Qué se revisó y qué queda pendiente" /></div>
-            <button class="btn-primary" :disabled="guardandoCobertura" @click="guardarRevisionCobertura">Guardar revisión</button>
+            <button class="btn-primary" :disabled="guardandoCobertura || (revisionCobertura.estado === 'CIERRE_CONFIRMADO' && (!filaCierre || !evidenciaCierreRevisada))" @click="guardarRevisionCobertura">Guardar revisión</button>
             <h4>Registrar periodo pendiente o revisado</h4>
             <div class="form-group"><label>Gestión desde</label><input v-model.number="tramoCobertura.gestion_desde" type="number" min="1900" max="2100" /></div>
             <div class="form-group"><label>Gestión hasta</label><input v-model.number="tramoCobertura.gestion_hasta" type="number" min="1900" max="2100" /></div>

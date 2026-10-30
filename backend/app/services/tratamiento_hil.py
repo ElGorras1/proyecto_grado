@@ -5,6 +5,8 @@ import json
 from app.services.calidad_kardex import tipos_alerta
 
 CATEGORIAS = {
+    'ASIGNACION_INFERIDA': 'Área asignada por correlación',
+    'DATO_AUSENTE': 'Dato ausente en el documento',
     'DISCREPANCIA_DOCUMENTAL': 'Discrepancia del documento',
     'AMBITO_DOCUMENTAL_INCIERTO': 'Ámbito de la hoja no confirmado',
     'DEPENDENCIA_OTRA_FILA': 'Depende de otra fila',
@@ -27,7 +29,13 @@ def huella_datos(m):
     """Una corrección posterior invalida la categoría anterior, sin borrar su auditoría."""
     rev=m.revision_documental or {}
     valores={k:getattr(m,k,None) for k in _CAMPOS}
+    # Conservar las huellas anteriores mientras no se incorporen lecturas nuevas.
+    for k in ('fecha_documental_texto', 'fecha_precision'):
+        if getattr(m,k,None) is not None:
+            valores[k]=getattr(m,k)
     valores['lectura_documental']={k:rev.get(k) for k in _LECTURAS}
+    if 'asignacion_area' in rev:
+        valores['asignacion_area']=rev['asignacion_area']
     def serializar(v):
         if isinstance(v,(date,datetime)): return v.isoformat()
         raise TypeError(type(v).__name__)

@@ -11,7 +11,8 @@ interface RevisionDocumental {
   tipo_fila?: string; fecha_documental?: string | null
 }
 interface Fila {
-  id: number; articulo_id: number; articulo: string; codigo: string; fecha: string; fecha_estimada: boolean;
+  id: number; articulo_id: number; articulo: string; codigo: string; fecha: string | null; fecha_estimada: boolean;
+  fecha_documental_texto?: string | null; fecha_precision?: string | null
   ingresos: number | null; salidas: number | null; saldo_previo: number | null; base_utilizable: boolean;
   saldo_vigente: number; saldo_esperado_reglas: number | null; movimiento_previo_id: number | null;
   detalle: string; lote_id: number; tanda: number; numero_pagina: number; orden_fila: number;
@@ -133,7 +134,7 @@ onMounted(inicializar)
       <div v-else class="reglas-tabla"><table>
         <thead><tr><th>Fecha para consulta</th><th>Artículo</th><th>Ingreso / salida</th><th>Saldo previo → vigente</th><th>Avisos de reglas</th><th>Evidencia</th></tr></thead>
         <tbody><tr v-for="f in resultado.filas" :key="f.id">
-          <td>{{ f.fecha }}<small v-if="f.fecha_estimada">Fecha estimada</small></td>
+          <td>{{ f.fecha || 'Sin fecha completa' }}<small v-if="f.fecha_documental_texto">Escrito: {{ f.fecha_documental_texto }}</small><small v-if="f.fecha_estimada">Fecha no confirmada</small></td>
           <td>{{ f.articulo }}<small>{{ f.codigo }} · #{{ f.id }} · Tanda {{ f.tanda }}</small></td>
           <td>{{ f.ingresos || 0 }} / {{ f.salidas || 0 }}</td>
           <td>{{ f.saldo_previo ?? 'Desconocido' }} → {{ f.saldo_vigente }}<small v-if="!f.base_utilizable">Base no utilizable para esta evaluación</small></td>
@@ -171,7 +172,7 @@ onMounted(inicializar)
       <h4>Filas anteriores y siguientes del documento disponible</h4>
       <div class="reglas-tabla"><table><thead><tr><th>Movimiento</th><th>Fecha</th><th>Lote / foto / fila</th><th>Detalle</th><th>Ingreso / salida</th><th>Saldo vigente</th></tr></thead>
         <tbody><tr v-for="v in detalle.vecinos" :key="v.id" :class="{'regla-seleccionada': v.id === detalle.fila.id}">
-          <td>#{{ v.id }}</td><td>{{ v.fecha }}<small v-if="v.fecha_estimada">Estimada</small></td><td>{{ v.lote_id }} / {{ v.numero_pagina }} / {{ v.orden_fila }}</td>
+          <td>#{{ v.id }}</td><td>{{ v.fecha || 'Sin fecha completa' }}<small v-if="v.fecha_documental_texto">{{ v.fecha_documental_texto }}</small><small v-if="v.fecha_estimada">No confirmada</small></td><td>{{ v.lote_id }} / {{ v.numero_pagina }} / {{ v.orden_fila }}</td>
           <td>{{ v.detalle }}</td><td>{{ v.ingresos || 0 }} / {{ v.salidas || 0 }}</td><td>{{ v.saldo_vigente }}</td>
         </tr></tbody></table></div>
       <details v-if="detalle.datos_originales"><summary>Extracción original conservada</summary><pre>{{ JSON.stringify(detalle.datos_originales, null, 2) }}</pre></details>

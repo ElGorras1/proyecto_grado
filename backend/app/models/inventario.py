@@ -93,7 +93,7 @@ class CustodiaExterna(Base):
         CheckConstraint("tipo IN ('FERIA', 'CONSIGNACION')", name="ck_custodia_tipo"),
         CheckConstraint("receptor_tipo IN ('PERSONA', 'INSTITUCION')", name="ck_custodia_receptor_tipo"),
         CheckConstraint("cantidad_entregada > 0 AND cantidad_fuera >= 0 AND cantidad_vendida >= 0 AND cantidad_devuelta >= 0", name="ck_custodia_cantidades"),
-        CheckConstraint("cantidad_entregada = cantidad_fuera + cantidad_vendida + cantidad_devuelta", name="ck_custodia_balance"),
+        CheckConstraint("cantidad_entregada + cantidad_ajustada = cantidad_fuera + cantidad_vendida + cantidad_devuelta AND cantidad_entregada + cantidad_ajustada BETWEEN 0 AND 2147483647", name="ck_custodia_balance"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -107,6 +107,7 @@ class CustodiaExterna(Base):
     ubicacion_externa: Mapped[str] = mapped_column(String(200), nullable=False)
     ciudad: Mapped[str | None] = mapped_column(String(100))
     cantidad_entregada: Mapped[int] = mapped_column(Integer, nullable=False)
+    cantidad_ajustada: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     cantidad_fuera: Mapped[int] = mapped_column(Integer, nullable=False)
     cantidad_vendida: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cantidad_devuelta: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

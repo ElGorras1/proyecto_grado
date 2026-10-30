@@ -156,7 +156,7 @@ onMounted(async () => {
         <div v-if="fila.no_disponible">La fila #{{ fila.id }} ya no está disponible. Conserva el corte y consulta la auditoría.</div>
         <template v-else>
           <header><h3>{{ fila.articulo_nombre }} · fila #{{ fila.id }}</h3><span>Tanda {{ fila.tanda }}</span></header>
-          <p>{{ fila.fecha_movimiento }} · {{ fila.detalle }} · ingreso {{ fila.ingresos ?? '—' }} · salida {{ fila.salidas ?? '—' }} · saldo escrito {{ fila.saldo_registrado }}</p>
+          <p>{{ fila.fecha_movimiento || 'Sin fecha completa' }} · {{ fila.detalle }} · ingreso {{ fila.ingresos ?? '—' }} · salida {{ fila.salidas ?? '—' }} · saldo escrito {{ fila.saldo_registrado }}</p>
           <p v-if="fila.tipos_alerta?.length" class="alerta">Alertas existentes: {{ fila.tipos_alerta.join(', ') }}. Verifica el papel y deja la anomalía documentada si realmente aparece allí.</p>
           <p v-if="fila.revision" :class="fila.revision.vigente ? 'decision' : 'alerta'">{{ fila.revision.vigente ? (fila.revision.resultado === 'COINCIDE_DOCUMENTO' ? 'Coincide con el documento' : 'Diferencia documental') : 'Decisión desactualizada: la fila cambió' }} · {{ fila.revision.revisor }} · {{ fecha(fila.revision.fecha) }} · {{ fila.revision.motivo }}</p>
           <details>

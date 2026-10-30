@@ -8,33 +8,21 @@ from app.models.activos import Activo, Existencia
 from app.models.area import Area
 from app.models.inventario import AperturaInventario, CustodiaExterna
 from app.models.kardex import MovimientoKardex, SolicitudCargaKardex
+from app.services.fechas_documentales import fecha_asignable, datos_fecha
+from app.services.cierre_documental import fuentes_cierre, fuente_cierre
 
 
 def ultimos_cierres_kardex(db):
-    """Última fila física por artículo: lote, página y orden de fila."""
-    m = MovimientoKardex
-    ranking = db.query(
-        m.id.label("movimiento_id"),
-        func.row_number().over(
-            partition_by=m.articulo_id,
-            order_by=(m.lote_id.desc(), func.coalesce(m.orden_pagina_validado, m.numero_pagina).desc(),
-                      m.orden_fila.desc(), m.id.desc()),
-        ).label("orden"),
-    ).filter(m.lote_id.isnot(None), m.estado == "ACTIVO").subquery()
-    return {cierre.articulo_id: cierre for cierre in db.query(m).join(
-        ranking, m.id == ranking.c.movimiento_id,
-    ).filter(ranking.c.orden == 1).all()}
+    """Fuente elegida; conserva propuestas mientras no exista revisión explícita."""
+    return {aid: fuente.cierre for aid, fuente in fuentes_cierre(db).items() if fuente.cierre}
 
 
 def ultimo_cierre_kardex(db, articulo_id):
-    m = MovimientoKardex
-    return db.query(m).filter(
-        m.articulo_id == articulo_id, m.lote_id.isnot(None), m.estado == "ACTIVO",
-    ).order_by(m.lote_id.desc(), func.coalesce(m.orden_pagina_validado, m.numero_pagina).desc(),
-               m.orden_fila.desc(), m.id.desc()).first()
+    fuente = fuente_cierre(db, articulo_id)
+    return fuente.cierre if fuente else None
 
 
-def base_kardex_dict(cierre):
+def base_kardex_dict(cierre, fuente=None):
     if cierre is None:
         return None
     revision = cierre.revision_documental or {}
@@ -44,8 +32,12 @@ def base_kardex_dict(cierre):
     elif cierre.tiene_error_saldo:
         motivo = "El saldo final tiene una alerta matemática pendiente de revisión."
     gestion_actual = datetime.now(ZoneInfo("America/La_Paz")).year
+    if motivo is None and not fecha_asignable(cierre):
+        motivo = "La fecha del cierre documental es ausente, parcial o técnica; requiere confirmación."
     if motivo is None and cierre.fecha_movimiento >= date(gestion_actual, 1, 1):
         motivo = f"La última fila histórica tiene fecha de {gestion_actual} o posterior."
+    if fuente and fuente.estado in ("DESACTUALIZADA", "RETIRADA"):
+        motivo = "La fuente de cierre cambió o su confirmación fue retirada; revisa su evidencia antes de abrir inventario."
     return {
         "saldo": cierre.saldo_registrado,
         "saldo_documental": revision.get("saldo_documental", cierre.saldo_registrado),
@@ -55,8 +47,10 @@ def base_kardex_dict(cierre):
         "movimiento_id": cierre.id,
         "lote_id": cierre.lote_id,
         "fecha_movimiento": cierre.fecha_movimiento,
+        **datos_fecha(cierre),
         "operable": motivo is None,
         "motivo_bloqueo": motivo,
+        "fuente_cierre": fuente.publico() if fuente else {"estado": "PROPUESTA", "vigente": False},
     }
 
 
@@ -78,10 +72,11 @@ def asegurar_apertura_desde_kardex(db, articulo_id, usuario, request,
     ).first()
     if en_curso:
         raise HTTPException(409, "Este artículo tiene un escaneo en proceso o pendiente de confirmar.")
-    cierre = ultimo_cierre_kardex(db, articulo_id)
+    fuente = fuente_cierre(db, articulo_id)
+    cierre = fuente.cierre if fuente else None
     if cierre is None:
         raise HTTPException(409, "Este artículo no tiene saldo histórico. Registra un conteo físico de apertura.")
-    base = base_kardex_dict(cierre)
+    base = base_kardex_dict(cierre, fuente)
     if not base["operable"]:
         raise HTTPException(409, base["motivo_bloqueo"])
     ultimo_moderno = db.query(func.max(MovimientoKardex.id)).filter(
@@ -103,6 +98,7 @@ def asegurar_apertura_desde_kardex(db, articulo_id, usuario, request,
     auditar(db, usuario, request, "activar_base_kardex_inventario", "apertura_inventario",
             articulo_id, {"saldo": cierre.saldo_registrado, "movimiento_historico_id": cierre.id,
                           "lote_historico_id": cierre.lote_id,
+                          "fuente_cierre": base["fuente_cierre"],
                           "ultimo_moderno_id": ultimo_moderno})
     return (apertura, True) if devolver_estado else apertura
 
@@ -125,7 +121,8 @@ def cambiar_existencia_area(db, apertura, area_id: int | None, delta: int,
             raise HTTPException(409, "La cantidad sin ubicación confirmada es insuficiente. Indica el área que entrega.")
         apertura.cantidad_sin_ubicacion = nuevo
         return
-    area = db.get(Area, area_id)
+    # Serializa el uso de existencias con la baja/reactivación administrativa.
+    area = db.query(Area).filter_by(id=area_id).populate_existing().with_for_update(read=True).first()
     if area is None or (exigir_area_activa and area.estado != "activo"):
         raise HTTPException(422, "Selecciona un área operativa activa.")
     row = db.query(Existencia).filter_by(activo_id=apertura.articulo_id,

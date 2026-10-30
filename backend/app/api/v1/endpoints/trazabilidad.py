@@ -17,6 +17,7 @@ from app.models.inventario import AperturaInventario, ConciliacionInicial, Custo
 from app.models.kardex import MovimientoKardex
 from app.models.usuario import Usuario
 from app.services.clasificador_nodos import normalizar_nodo_grafo
+from app.services.fechas_documentales import datos_fecha, fecha_asignable
 
 router = APIRouter(prefix="/kardex/articulos", tags=["Trazabilidad"])
 BOLIVIA = timezone(timedelta(hours=-4))
@@ -41,6 +42,7 @@ def dia_operacion(valor):
 def consultar_trazabilidad(
     articulo_id: int,
     ambito: Literal["TODOS", "HISTORICO", "OPERATIVO"] = "TODOS",
+    sin_fecha: bool = False,
     desde: date | None = None, hasta: date | None = None,
     ubicacion: str | None = Query(None, max_length=200),
     tanda: int | None = Query(None, ge=1, le=9999),
@@ -86,11 +88,16 @@ def consultar_trazabilidad(
         contraparte = lugar("historico:" + sha256(nodo.encode()).hexdigest()[:16], nodo, "REFERENCIA_HISTORICA")
         documental = lugar("saldo:documental", "Saldo documental · ubicación no indicada", "DOCUMENTAL")
         manual = m.area_estado == "RESUELTA_POR_HUMANO" and not m.requiere_auditoria_nodo
+        asignacion = (m.revision_documental or {}).get("asignacion_area")
+        inferida = isinstance(asignacion, dict) and asignacion.get("estado") == "INFERIDA"
         registrar({
             "clave": clave, "id": m.id, "clase": "HISTORICO", "ambito": "HISTORICO",
-            "descripcion": m.detalle, "fecha": m.fecha_movimiento,
-            "fecha_documental": m.fecha_movimiento, "fecha_registro": None,
+            "descripcion": m.detalle, "fecha": m.fecha_movimiento if fecha_asignable(m) else None,
+            "fecha_documental": m.fecha_movimiento if fecha_asignable(m) else None, "fecha_registro": None,
+            "fecha_consulta_tecnica": m.fecha_movimiento if not fecha_asignable(m) else None,
+            **datos_fecha(m),
             "fecha_estado": m.fecha_estado, "area_estado": m.area_estado,
+            "area_documental": m.area, "asignacion_area": asignacion if inferida else None,
             "ingreso": m.ingresos or 0, "salida": m.salidas or 0,
             "cantidad": (m.ingresos or 0) + (m.salidas or 0),
             "documento": m.referencia, "referencia_estado": m.referencia_estado,
@@ -102,7 +109,7 @@ def consultar_trazabilidad(
             "observaciones": m.observaciones, "estado": m.estado,
         }, [
             {"ubicacion": documental, "direccion": "REGISTRO", "etiqueta": "Asiento documental", "certeza": "PENDIENTE"},
-            {"ubicacion": contraparte, "direccion": "REGISTRO", "etiqueta": "Referencia revisada" if manual else "Clasificación por revisar",
+            {"ubicacion": contraparte, "direccion": "REGISTRO", "etiqueta": "Área inferida por correlación" if inferida else "Referencia revisada" if manual else "Clasificación por revisar",
              "certeza": "CONFIRMADA" if manual else "PENDIENTE"},
         ])
 
@@ -127,6 +134,23 @@ def consultar_trazabilidad(
                 rid = lugar(f"receptor:{clave}", persona, "RECEPTOR")
                 conexiones.append({"ubicacion": rid, "direccion": "SALIDA" if m.movimiento_origen_id else "ENTRADA",
                     "etiqueta": "Devuelve" if m.movimiento_origen_id else "Recibe", "certeza": "CONFIRMADA"})
+        elif e["clase"] == "RECTIFICACION_LOGISTICA":
+            clases = {"TRANSFERENCIA": "TRANSFERENCIA", "ENTREGA": "CUSTODIA_ENTREGA"}
+            original_clase = clases.get(e["corrige_clase"])
+            if not original_clase:
+                ev = eventos_custodia[e["corrige_registro_id"]]
+                original_clase = "CUSTODIA_VENTA" if ev.tipo == "VENTA" else "CUSTODIA_RETORNO"
+            vinculos.append({"destino": f"{original_clase}:{e['corrige_registro_id']}", "tipo": "RECTIFICA"})
+            if e["rectificacion_anterior_id"]:
+                vinculos.append({"destino": f"RECTIFICACION_LOGISTICA:{e['rectificacion_anterior_id']}", "tipo": "RECTIFICA"})
+            for d in e["areas_delta"]:
+                conexiones.append({"ubicacion": area(d["area_id"]), "direccion": "ENTRADA" if d["delta"] > 0 else "SALIDA",
+                                    "etiqueta": f"Compensa {abs(d['delta'])} u.", "certeza": "CONFIRMADA"})
+            if e["custodia_id"]:
+                c = custodias[e["custodia_id"]]
+                externo = lugar(f"custodia:{c.id}", f"{e['datos_corregidos'].get('ubicacion_externa', c.ubicacion_externa)} · custodia #{c.id}", "CUSTODIA")
+                conexiones.append({"ubicacion": externo, "direccion": "REGISTRO",
+                                   "etiqueta": "Rectifica custodia", "certeza": "CONFIRMADA"})
         elif e["clase"] == "TRANSFERENCIA":
             t = transferencias[e["id"]]
             for aid, direccion in ((t.area_origen_id, "SALIDA"), (t.area_destino_id, "ENTRADA")):
@@ -134,7 +158,8 @@ def consultar_trazabilidad(
                     "etiqueta": "Traslada", "certeza": "CONFIRMADA" if aid in areas else "PENDIENTE"})
         else:
             c = custodias[e["custodia_id"]]
-            externo = lugar(f"custodia:{c.id}", f"{c.ubicacion_externa} · custodia #{c.id}", "CUSTODIA")
+            ubicacion_externa = e["area_destino"] if e["clase"] == "CUSTODIA_ENTREGA" else e["area_origen"]
+            externo = lugar(f"custodia:{c.id}", f"{ubicacion_externa or c.ubicacion_externa} · custodia #{c.id}", "CUSTODIA")
             if e["clase"] == "CUSTODIA_ENTREGA":
                 conexiones += [{"ubicacion": area(c.area_origen_id), "direccion": "SALIDA", "etiqueta": "Entrega", "certeza": "CONFIRMADA"},
                                {"ubicacion": externo, "direccion": "ENTRADA", "etiqueta": "Mantiene en custodia", "certeza": "CONFIRMADA"}]
@@ -206,6 +231,8 @@ def consultar_trazabilidad(
     filtrados = []
     for e in eventos.values():
         dia = dia_operacion(e["fecha"])
+        if sin_fecha and dia is not None:
+            continue
         if ambito != "TODOS" and e["ambito"] != ambito:
             continue
         if tanda is not None and e.get("tanda") != tanda:

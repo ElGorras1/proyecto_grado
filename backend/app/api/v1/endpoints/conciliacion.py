@@ -10,14 +10,17 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
 from app.models.activos import Activo, Existencia
+from app.services.cierre_documental import fuente_cierre
 from app.models.area import Area
 from app.models.inventario import AperturaInventario, ConciliacionInicial, CustodiaExterna
+from app.models.inventario import TransferenciaArea
+from app.models.rectificacion_logistica import RectificacionLogistica
 from app.models.kardex import MovimientoKardex
 from app.models.usuario import Usuario
 from app.services.clasificador_nodos import AREA_NO_APLICA, REFERENCIA_PRESENTE
 from app.services.inventario import (
     asegurar_apertura_desde_kardex, auditar, base_kardex_dict,
-    distribucion_dict, ultimo_cierre_kardex, verificar_distribucion,
+    distribucion_dict, verificar_distribucion,
 )
 
 router = APIRouter(prefix="/kardex/articulos", tags=["Conciliación inicial"])
@@ -60,6 +63,10 @@ def registro_dict(row: ConciliacionInicial) -> dict:
 
 
 def impedimento_inicial(db: Session, apertura: AperturaInventario) -> str | None:
+    if db.query(TransferenciaArea.id).filter_by(articulo_id=apertura.articulo_id).first():
+        return "Ya hubo transferencias posteriores al corte; corresponde un conteo posterior y ajuste autorizado, no una conciliación inicial."
+    if db.query(RectificacionLogistica.id).filter_by(articulo_id=apertura.articulo_id).first():
+        return "Ya existen rectificaciones posteriores al corte; conserva su trazabilidad y registra un ajuste autorizado."
     if db.query(CustodiaExterna.id).filter_by(articulo_id=apertura.articulo_id).first():
         return "Ya hubo una entrega en custodia externa; corresponde un ajuste operativo, no una conciliación inicial."
     if db.query(MovimientoKardex.id).filter(
@@ -87,8 +94,9 @@ def consultar_conciliacion(
         motivo = impedimento_inicial(db, apertura)
         base = apertura.cantidad_actual
     else:
-        cierre = ultimo_cierre_kardex(db, articulo_id)
-        base_doc = base_kardex_dict(cierre)
+        fuente = fuente_cierre(db, articulo_id)
+        cierre = fuente.cierre if fuente else None
+        base_doc = base_kardex_dict(cierre, fuente)
         motivo = (base_doc["motivo_bloqueo"] if base_doc else
                   "No hay cierre histórico; primero aprueba una apertura por conteo físico.")
         base = base_doc["saldo"] if base_doc else None
@@ -118,6 +126,11 @@ def registrar_conciliacion(
         raise HTTPException(422, "El conteo contiene un área inexistente o inactiva.")
 
     apertura = asegurar_apertura_desde_kardex(db, articulo_id, usuario, request)
+    areas = {a.id: a for a in db.query(Area).filter(
+        Area.id.in_([item.area_id for item in payload.areas]), Area.estado == "activo",
+    ).order_by(Area.id).populate_existing().with_for_update(read=True).all()}
+    if len(areas) != len(payload.areas):
+        raise HTTPException(422, "El área cambió durante el conteo; revisa su vigencia.")
     if db.get(ConciliacionInicial, articulo_id):
         raise HTTPException(409, "Este artículo ya tiene una conciliación inicial registrada.")
     motivo = impedimento_inicial(db, apertura)

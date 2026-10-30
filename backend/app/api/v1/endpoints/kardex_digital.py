@@ -1,5 +1,6 @@
 """Vista de libro mayor digital por artículo a partir del corte operativo."""
 import csv
+import json
 import io
 from datetime import UTC, datetime, time
 
@@ -16,7 +17,9 @@ from app.models.inventario import (
 )
 from app.models.kardex import MovimientoKardex
 from app.models.usuario import Usuario
-from app.services.inventario import base_kardex_dict, ultimo_cierre_kardex
+from app.services.inventario import base_kardex_dict
+from app.services.cierre_documental import fuente_cierre
+from app.models.rectificacion_logistica import RectificacionLogistica
 
 
 router = APIRouter(prefix="/kardex/articulos", tags=["Kárdex digital"])
@@ -44,14 +47,18 @@ def consultar_kardex_digital(
         raise HTTPException(404, "Artículo no encontrado")
     apertura = db.get(AperturaInventario, articulo_id)
     if apertura is None:
-        cierre = ultimo_cierre_kardex(db, articulo_id)
-        documental = base_kardex_dict(cierre) if cierre else None
+        fuente = fuente_cierre(db, articulo_id)
+        cierre = fuente.cierre if fuente else None
+        documental = base_kardex_dict(cierre, fuente) if cierre else None
         return {"articulo_id": articulo_id, "articulo": articulo.nombre,
                 "estado": "BASE_DOCUMENTAL_SIN_CORTE" if documental else "SIN_BASE",
                 "base": {"cantidad": documental["saldo"], "origen": "KARDEX_HISTORICO",
                          "movimiento_historico_id": documental["movimiento_id"],
                          "lote_historico_id": documental["lote_id"],
-                         "fecha_corte": None, "referencia_documento": None} if documental else None,
+                         "fecha_corte": None, "referencia_documento": None,
+                         "fuente_cierre": documental["fuente_cierre"],
+                         "operable": documental["operable"],
+                         "motivo_bloqueo": documental["motivo_bloqueo"]} if documental else None,
                 "eventos": [], "saldo_final": documental["saldo"] if documental else None,
                 "integridad": None}
 
@@ -65,6 +72,7 @@ def consultar_kardex_digital(
     custodias = db.query(CustodiaExterna).filter_by(articulo_id=articulo_id).all()
     eventos_custodia = db.query(EventoCustodiaExterna).filter_by(articulo_id=articulo_id).all()
     custodias_por_id = {c.id: c for c in custodias}
+    contextos_custodia = {c.id: {"ubicacion_externa": c.ubicacion_externa, "receptor_nombre": c.receptor_nombre} for c in custodias}
     areas = {a.id: a.nombre for a in db.query(Area).all()}
     usuarios = {u.id: u.nombre for u in db.query(Usuario).all()}
     secuencia = [(instante(m.registrado_en, m.fecha_movimiento), 0, m.id, "OPERACION", m)
@@ -75,6 +83,8 @@ def consultar_kardex_digital(
                   for c in custodias]
     secuencia += [(instante(e.registrado_en), 3, e.id, "CUSTODIA_EVENTO", e)
                   for e in eventos_custodia]
+    secuencia += [(instante(r.registrado_en), 4, r.id, "RECTIFICACION_LOGISTICA", r)
+                  for r in db.query(RectificacionLogistica).filter_by(articulo_id=articulo_id)]
     secuencia.sort(key=lambda fila: fila[:3])
 
     saldo = apertura.cantidad_inicial
@@ -151,8 +161,34 @@ def consultar_kardex_digital(
                 "movimiento_origen_id": None, "devuelto_por": None,
                 "estado": "ACTIVO", "saldo_institucional": saldo,
             })
+        elif clase == "RECTIFICACION_LOGISTICA":
+            saldo += fila.delta_total
+            if fila.clase == "ENTREGA":
+                contextos_custodia[fila.custodia_id] = fila.nuevo
+            eventos.append({
+                "clase": clase, "id": fila.id, "custodia_id": fila.custodia_id,
+                "fecha_operacion": fila.registrado_en, "fecha_documental": None,
+                "fecha_registro": fila.registrado_en, "descripcion": "Rectificación de " + {
+                    "TRANSFERENCIA": "transferencia", "ENTREGA": "entrega externa",
+                    "EVENTO_CUSTODIA": "venta o retorno"}[fila.clase],
+                "ingreso": max(fila.delta_total, 0), "salida": max(-fila.delta_total, 0),
+                "cantidad_original": max(fila.previo["cantidad"], fila.nuevo["cantidad"]),
+                "cantidad_transferida": sum(max(d["delta"], 0) for d in fila.areas_delta),
+                "area_origen": None, "area_destino": None,
+                "documento": fila.referencia_documento, "encargado": usuarios.get(fila.registrado_por),
+                "registrador": usuarios.get(fila.registrado_por), "receptor": fila.nuevo.get("receptor_nombre") or fila.nuevo.get("comprador"),
+                "movimiento_origen_id": None, "devuelto_por": None, "estado": "ACTIVO",
+                "saldo_institucional": saldo, "corrige_clase": fila.clase,
+                "corrige_registro_id": fila.transferencia_id if fila.clase == "TRANSFERENCIA" else fila.custodia_id if fila.clase == "ENTREGA" else fila.evento_custodia_id,
+                "rectificacion_anterior_id": fila.anterior_id,
+                "cantidad_anterior": fila.previo["cantidad"], "cantidad_corregida": fila.nuevo["cantidad"],
+                "motivo_correccion": fila.motivo, "autorizado_por_id": fila.registrado_por,
+                "datos_previos": fila.previo, "datos_corregidos": fila.nuevo,
+                "areas_delta": fila.areas_delta, "delta_custodia": fila.delta_custodia,
+            })
         else:
             custodia = custodias_por_id[fila.custodia_id]
+            contexto = contextos_custodia[custodia.id]
             venta = fila.tipo == "VENTA"
             if venta:
                 saldo -= fila.cantidad
@@ -165,7 +201,7 @@ def consultar_kardex_digital(
                 "ingreso": 0, "salida": fila.cantidad if venta else 0,
                 "cantidad_original": fila.cantidad,
                 "cantidad_transferida": 0 if venta else fila.cantidad,
-                "area_origen": custodia.ubicacion_externa,
+                "area_origen": contexto["ubicacion_externa"],
                 "area_destino": areas.get(fila.area_destino_id) if not venta else None,
                 "documento": fila.referencia_documento,
                 "encargado": usuarios.get(fila.encargado_id),
@@ -174,8 +210,8 @@ def consultar_kardex_digital(
                 "movimiento_origen_id": None, "devuelto_por": None,
                 "estado": "ACTIVO", "saldo_institucional": saldo,
             })
-        eventos[-1].update({"alertas_control": fila.alertas_control,
-                           "justificacion_alertas": fila.justificacion_alertas})
+        eventos[-1].update({"alertas_control": getattr(fila, "alertas_control", None),
+                           "justificacion_alertas": getattr(fila, "justificacion_alertas", None)})
     return {"articulo_id": articulo_id, "articulo": articulo.nombre,
             "estado": "OPERATIVO", "base": {
                 "cantidad": apertura.cantidad_inicial,
@@ -207,13 +243,14 @@ def descargar_kardex_digital(
                        "documento", "encargado", "registrador", "entrega_original_id",
                        "devuelto_por", "custodia_id", "receptor", "estado",
                        "corrige_movimiento_id", "cantidad_anterior",
-                       "cantidad_corregida", "motivo_correccion", "autorizado_por_id"))
+                       "cantidad_corregida", "motivo_correccion", "autorizado_por_id",
+                       "corrige_clase", "corrige_registro_id", "rectificacion_anterior_id", "delta_custodia", "areas_delta"))
     base = libro["base"]
     escritor.writerow(("BASE", "", base["fecha_corte"] or "",
                        celda_texto(f"{base['origen']} · movimiento histórico {base['movimiento_historico_id'] or ''}"),
                        "", "", "", "", "", base["cantidad"],
                        celda_texto(base["referencia_documento"]), "", "", "", "", "", "",
-                       libro["estado"], "", "", "", "", ""))
+                       libro["estado"], "", "", "", "", "", "", "", "", "", ""))
     for evento in libro["eventos"]:
         escritor.writerow((evento["clase"], evento["fecha_operacion"] or evento["fecha_documental"] or "",
                            evento["fecha_registro"] or "", celda_texto(evento["descripcion"]),
@@ -229,7 +266,9 @@ def descargar_kardex_digital(
                            evento.get("cantidad_anterior") if evento.get("cantidad_anterior") is not None else "",
                            evento.get("cantidad_corregida") if evento.get("cantidad_corregida") is not None else "",
                            celda_texto(evento.get("motivo_correccion")),
-                           evento.get("autorizado_por_id") or ""))
+                           evento.get("autorizado_por_id") or "", evento.get("corrige_clase") or "",
+                           evento.get("corrige_registro_id") or "", evento.get("rectificacion_anterior_id") or "",
+                           evento.get("delta_custodia", ""), celda_texto(json.dumps(evento.get("areas_delta", []), ensure_ascii=False))))
     return Response("\ufeff" + salida.getvalue(), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition":
                              f'attachment; filename="kardex_digital_articulo_{articulo_id}.csv"'})

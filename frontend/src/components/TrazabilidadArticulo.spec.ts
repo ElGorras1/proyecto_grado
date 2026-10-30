@@ -28,6 +28,13 @@ beforeEach(() => vi.resetAllMocks())
 afterEach(() => instancias.splice(0).forEach(w => w.unmount()))
 
 describe('Consulta de trazabilidad', () => {
+  it('muestra la asignación inferida junto a la lectura documental', async () => {
+    obtener.mockResolvedValue({ data: { ...resultado, eventos: [{ ...historico, area_documental: 'CDP',
+      asignacion_area: { area: 'Capacitación', motivo: 'Agrupación por parecido y frecuencia; identidad no confirmada.' } }] } })
+    const w = montar(); await flushPromises()
+    expect(w.get('.detalle').text()).toContain('Área inferida: Capacitación')
+    expect(w.get('.detalle').text()).toContain('Lectura conservada: CDP')
+  })
   it('abre el cierre fijado fuera del filtro, la foto y su fila sin presentar un archivo inexistente', async () => {
     obtener.mockResolvedValue({ data: resultado })
     const w = montar(); await flushPromises()

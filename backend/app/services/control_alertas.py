@@ -85,11 +85,15 @@ def incorporar_avisos_guardados(db):
     return cantidad
 
 def contexto_actual(db, caso):
+    from app.services.rectificaciones_logisticas import estado_vigente
     for clase, (modelo, columna) in ORIGENES.items():
         origen = getattr(caso, columna)
         if origen is not None:
             fila = db.get(modelo, origen)
             datos = operacion(fila, clase)
+            if clase in ("TRANSFERENCIA", "CUSTODIA", "EVENTO_CUSTODIA"):
+                vigente, _, rect = estado_vigente(db, "ENTREGA" if clase == "CUSTODIA" else clase, fila)
+                datos.update(datos_vigentes=vigente, ultima_rectificacion_logistica_id=rect.id if rect else None)
             if clase == "MOVIMIENTO":
                 from app.services.inventario import cantidad_efectiva_movimiento
                 datos.update(cantidad_vigente=cantidad_efectiva_movimiento(db, fila),
