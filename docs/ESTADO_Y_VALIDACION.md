@@ -1,5 +1,42 @@
 # Estado, pruebas y pendientes
 
+## Auditoría funcional y retiro autorizado del registro de ensayo
+
+Comprobación posterior del 31/10/2026 sobre el código 79e1dc7. El núcleo funcional
+está implementado y las verificaciones realizadas no reprodujeron un fallo central.
+La entrega institucional todavía requiere cerrar los datos y su evaluación.
+
+- Servidor: 410 pruebas aprobadas y cuatro omitidas en SQLite por requerir PostgreSQL.
+- PostgreSQL aislado: 201 aprobadas, sin omisiones; circuito de 14 etapas y preservación
+  de tablas, secuencias y 927 archivos institucionales antes de la limpieza autorizada.
+- Interfaz: 116 aprobadas, análisis estático, tipos y compilación correctos.
+- Consultas con datos actuales: 49 respuestas esperadas por los tres roles, antes y
+  después de la limpieza. La identidad se sustituye solo en el cliente de ensayo
+  y la conexión utiliza una transacción de solo lectura; no acredita un login real.
+- API y conexión a PostgreSQL responden; la interfaz local quedó iniciada. Los recursos
+  protegidos rechazan la consulta anónima. No había entrenamientos en cola.
+- Gemini devolvió las dos filas, fechas y cantidades esperadas de una tarjeta ficticia.
+  Esta comprobación no incorporó documentos ni movimientos a la base institucional.
+
+El titular confirmó que **PRUEBA E91159** era un ensayo y autorizó borrarlo. Tras un
+respaldo completo restaurado y verificado, se retiraron exclusivamente el artículo 1,
+sus nueve movimientos digitales y su apertura de 20 unidades. La acción conserva
+auditoría y snapshot; los demás registros y los 927 archivos privados se verificaron
+intactos. El expediente está en outputs/auditoria_cierre_funcional_20261031/.
+
+El corte posterior tiene **398 artículos, 11.909 movimientos, una apertura y seis
+unidades sin ubicación**. No quedan artículos con indicio de prueba en el listado de
+preparación. Persisten 38 bases bloqueadas, 397 fuentes sin confirmación documental,
+una sola área activa y cero estudios o etiquetas institucionales independientes.
+Las transferencias requieren dos áreas activas: el circuito está probado en QA,
+pero esta instalación todavía no cumple esa condición de operación.
+
+Prioridades para cerrar la entrega: verificar las seis unidades y su ubicación;
+confirmar áreas y fuentes con la institución; ejecutar la evaluación independiente
+del detector y el cotejo del grafo; fijar el alcance del modelo operativo digital,
+que sigue sin entrenamiento por datos insuficientes. Docker continúa aplazado.
+Los recuentos inferiores corresponden a cortes previos y se conservan como historia.
+
 ## Cierre metodológico del 31 de octubre
 
 La herramienta de estudios nuevos se alineó con el capítulo I: NORMAL, ANOMALO e
