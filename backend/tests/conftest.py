@@ -44,6 +44,8 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 @pytest.fixture(autouse=True)
 def horario_estable_en_pruebas(monkeypatch):
+    # Un cliente de pruebas nunca debe iniciar el trabajador de la instalación real.
+    monkeypatch.setattr('app.main.iniciar', lambda: None)
     # Las pruebas generales no dependen de la hora del equipo que ejecuta CI.
     monkeypatch.setattr(settings, "CONTROL_HORA_INICIO", 0)
     monkeypatch.setattr(settings, "CONTROL_HORA_FIN", 24)

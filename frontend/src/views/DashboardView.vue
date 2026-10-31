@@ -2,22 +2,9 @@
 import { computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
+import { espacios as secciones } from '@/services/navegacion'
 const auth = useAuthStore()
 const router = useRouter()
-const secciones = [
-  { ruta: 'kardexDigital', icono: 'pi-book', titulo: 'Kárdex digital', descripcion: 'Historial, fotografías, revisión HIL y cobertura documental.', categoria: 'Documentar y validar' },
-  { ruta: 'inventarioVivo', icono: 'pi-box', titulo: 'Inventario actual', descripcion: 'Existencias, operaciones, transferencias y custodia.', categoria: 'Operar y conciliar' },
-  { ruta: 'reporteInventario', icono: 'pi-chart-bar', titulo: 'Reportes', descripcion: 'Filtros por gestión, movimientos y descarga del detalle.', categoria: 'Revisar y analizar' },
-  { ruta: 'analitica', icono: 'pi-search', titulo: 'Analítica y auditoría histórica', descripcion: 'Reglas, entrenamiento, versiones y resultados del modelo.', categoria: 'Revisar y analizar' },
-  { ruta: 'analiticaOperativa', icono: 'pi-chart-line', titulo: 'Analítica de operaciones digitales', descripcion: 'Controles y preparación del modelo para eventos reales.', categoria: 'Revisar y analizar' },
-  { ruta: 'gestionInstitucional', icono: 'pi-calendar', titulo: 'Informe institucional y cierres anuales', descripcion: 'Balances, consulta por gestión, cierre y reapertura.', categoria: 'Operar y conciliar' },
-  { ruta: 'alertasInventario', icono: 'pi-exclamation-triangle', titulo: 'Alertas y seguimiento de inventario', descripcion: 'Casos, responsables, evidencia y conclusiones.', categoria: 'Revisar y analizar' },
-  { ruta: 'preparacionInventario', icono: 'pi-check-square', titulo: 'Preparación del inventario', descripcion: 'Pendientes de fuente, conteo y ubicación; fichas imprimibles.', categoria: 'Operar y conciliar' },
-  { ruta: 'validacionProyecto', icono: 'pi-check-circle', titulo: 'Validación del proyecto', descripcion: 'Muestras, cotejos independientes y métricas respaldadas.', categoria: 'Documentar y validar' },
-  { ruta: 'usuarios', icono: 'pi-users', titulo: 'Gestión de usuarios', descripcion: 'Cuentas, roles, estado y adscripción.', categoria: 'Administrar', roles: ['Administrador'] },
-  { ruta: 'areasCatalogos', icono: 'pi-sitemap', titulo: 'Áreas y catálogos', descripcion: 'Ubicaciones operativas, catálogo histórico y equivalencias.', categoria: 'Administrar', roles: ['Administrador', 'Auditor'] },
-  { ruta: 'reporteAccesos', icono: 'pi-history', titulo: 'Registro de accesos', descripcion: 'Fechas, cuentas y resultados de acceso.', categoria: 'Administrar', roles: ['Administrador', 'Auditor'] },
-]
 const seccionesVisibles = computed(() => secciones.filter(s => !s.roles || s.roles.includes(auth.rol ?? '')))
 function cerrarSesion() {
   auth.logout()
@@ -28,7 +15,7 @@ function cerrarSesion() {
 <template>
   <main class="dashboard">
     <header class="inicio-encabezado">
-      <div><p class="sobre-titulo">INICIO</p><h1>Tu espacio de trabajo</h1><p class="introduccion">Todas las herramientas, organizadas para encontrarlas mejor.</p></div>
+      <div><p class="sobre-titulo">INICIO</p><h1>Tu espacio de trabajo</h1><p class="introduccion">Consulta artículos, revisa pendientes y prepara tus reportes.</p></div>
       <div class="sesion">
         <div v-if="auth.usuario"><strong>{{ auth.usuario.nombre }}</strong><span>{{ auth.usuario.rol }}</span></div>
         <button class="btn-outline" @click="cerrarSesion">Cerrar sesión</button>
@@ -58,7 +45,7 @@ h1 { margin: 0; font-weight: 600; }
 .sesion strong, .sesion span { display: block; font-size: .82rem; }
 .sesion strong { font-weight: 500; }
 .sesion span { color: var(--text-secondary); margin-top: .2rem; }
-.mosaico-secciones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.125rem; }
+.mosaico-secciones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.125rem; }
 .acceso { position: relative; display: flex; align-items: flex-start; gap: .9rem; min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-color); color: var(--text-primary); text-decoration: none; transition: border-color .18s, box-shadow .18s; }
 .acceso:hover { border-color: #99b3c5; box-shadow: var(--shadow); }
 .icono-seccion { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 9px; background: var(--bg-subtle); color: var(--primary); font-size: 1rem; }

@@ -1,6 +1,70 @@
 # Estado, pruebas y pendientes
 
-## Situación vigente y tareas de cierre — 31/10/2026
+## Situación vigente: navegación y análisis automático — 31/10/2026
+
+El titular aprobó simplificar el trabajo cotidiano y evitar que el personal tenga
+que gestionar entrenamientos. El inicio presenta Artículos e inventario, Revisiones
+y alertas, Reportes y Administración; Operador no ve Administración. Las funciones
+anteriores y sus permisos se conservan dentro de esos espacios y herramientas avanzadas.
+
+Reportes reúne Movimientos, Resumen y Balance/cierre de gestión. El resumen no carga
+ni presenta controles de cierre; el cierre no repite la consulta del resumen. Se
+conserva la gestión elegida desde cualquiera de los dos informes. Un balance sin
+inventario operativo no propone guardar un cierre vacío. Impresión/PDF es la salida
+visible del resumen; JSON queda como exportación avanzada. Los movimientos y su CSV
+utilizan la referencia documental operativa cuando corresponde, sin confundirla con
+el campo de referencia histórico.
+
+La bandeja común distingue avisos documentales, resultados del corte y controles
+operativos. Los avisos HIL categorizados no se repiten por defecto; se pueden incluir
+expresamente sin borrar sus marcas. Un aviso abre el artículo o resultado exacto.
+Al cambiar entre Kárdex y operaciones se conserva el artículo. Versiones, parámetros,
+estudios y el modelo digital sin datos quedan fuera de los accesos cotidianos.
+
+La política está habilitada hasta 2025, con comprobación de datos cada **300 segundos**
+y revisión de actualización cada **30 días**. La inferencia aplica los pesos y el
+contexto de la versión del 20/10; guarda resultados de seguimiento por huella y no
+duplica puntuaciones idénticas. Si no cambian los datos relevantes de entrenamiento,
+no prepara otra versión. Con cambios y grupos/filas suficientes prepara un candidato
+POR_ARTICULO. El modelo en uso no se sustituye automáticamente: una referencia
+distinta exige comprobaciones técnicas y un cambio administrativo auditado. No se
+acredita mejor precisión por haber completado un entrenamiento.
+
+El trabajador utiliza el bloqueo distribuido ya existente y retoma comprobaciones
+vencidas tras reiniciar el servicio. Un archivo de modelo alterado impide publicar
+inferencias; se conserva la referencia y se muestra el fallo en mantenimiento.
+Las decisiones de seguimiento tienen control de versión y auditoría y no cambian
+stock ni documentos. Los estudios independientes conservan sus fuentes y denominadores.
+
+La migración aditiva **w38c97e3f502** añade política, resultados y revisiones de
+seguimiento. Se ensayó en una restauración antes de aplicarla. La instalación
+conservó sus registros previos y los 927 archivos privados; se añadió la auditoría
+11059 de configuración. La primera inferencia actualizó por separado **cuatro**
+movimientos con cambios posteriores al corte, con **cero avisos nuevos**, sin
+reentrenar ni sustituir las 8.367 puntuaciones y 359 avisos originales. La bandeja
+actual tiene 356 avisos del modelo pendientes; tres ya tenían revisiones que los
+excluyen de la lista diaria. Los avisos originales no se eliminaron.
+
+Verificación local: **431 aprobadas y cuatro omitidas en SQLite**, **224 aprobadas
+en PostgreSQL**, **148 en interfaz**, tipos, compilación y análisis estático correctos.
+No sumar suites solapadas. El recorrido real de navegador comprobó tres roles,
+128 consultas de lectura, impresión de la vista sin navegación, filtros compartidos,
+artículo compartido, evidencias y anchos 390/320 sin errores de JavaScript/API,
+escrituras ni desbordamiento. Es una comprobación técnica, no aceptación institucional.
+
+Respaldo previo restaurado: backend/backups/respaldo_20261031T223246232071Z/.
+Respaldo posterior restaurado: backend/backups/respaldo_20261031T224645297054Z/.
+Piloto final: backend/backups/piloto_20261031T224034251620Z/.
+Expediente privado: outputs/simplificacion_automatizacion_20261031/.
+La interfaz local sigue en localhost:5173 y utiliza la API actualizada en 127.0.0.1:8011.
+La configuración local de conexión se conserva fuera de Git.
+
+Siguen pendientes el cotejo de 397 fuentes y 41 equivalencias, las 38 bases bloqueadas,
+los conteos físicos si se activa inventario operativo, la evaluación humana del detector,
+las mediciones de grafo/tiempos y la entrega de producción. Docker continúa aplazado.
+Los apartados siguientes conservan cortes anteriores.
+
+## Corte anterior: cierre funcional — 31/10/2026
 
 El núcleo funcional está implementado y verificado técnicamente. No se acredita
 todavía aceptación institucional ni exactitud supervisada del detector.

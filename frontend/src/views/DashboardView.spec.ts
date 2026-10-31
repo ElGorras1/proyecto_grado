@@ -22,19 +22,11 @@ describe('Inicio', () => {
         return typeof destino === 'string' ? destino : destino.name
       })
       expect(rutas).toEqual([
-        'kardexDigital',
-        'inventarioVivo',
-        'reporteInventario',
-        'analitica',
-        'analiticaOperativa',
-        'gestionInstitucional',
-        'alertasInventario',
-        'preparacionInventario',
-        'validacionProyecto',
-        ...(rol === 'Administrador' ? ['usuarios'] : []),
-        ...(rol !== 'Operador' ? ['areasCatalogos'] : []),
-        ...(rol !== 'Operador' ? ['reporteAccesos'] : []),
+        'articulosInventario', 'revisiones', 'reportes',
+        ...(rol !== 'Operador' ? ['administracion'] : []),
       ])
+      expect(w.text()).not.toContain('Entrenar')
+      expect(w.text()).not.toContain('Validación del proyecto')
       w.unmount()
     },
   )

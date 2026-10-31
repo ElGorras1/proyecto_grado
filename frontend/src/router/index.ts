@@ -4,10 +4,18 @@ import { useAuthStore } from '@/stores/auth'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    { path: '/inventario', name: 'articulosInventario', redirect: { name: 'kardexDigital' } },
+    { path: '/reportes', name: 'reportes', redirect: { name: 'reporteInventario' } },
+    { path: '/revisiones', name: 'revisiones', component: () => import('@/views/RevisionesView.vue'), meta: { roles: ['Administrador', 'Operador', 'Auditor'] } },
+    { path: '/administracion', name: 'administracion', component: () => import('@/views/AdministracionView.vue'), meta: { roles: ['Administrador', 'Auditor'] } },
+    { path: '/mantenimiento-analitico', name: 'mantenimientoAnalitico', component: () => import('@/views/MantenimientoAnaliticoView.vue'), meta: { roles: ['Administrador', 'Auditor'] } },
+    { path: '/reportes/cierres', name: 'cierresGestion', component: () => import('@/views/GestionInstitucionalView.vue'), props: { seccion: 'cierres' }, meta: { roles: ['Administrador', 'Operador', 'Auditor'] } },
     {
-      path: '/gestion-institucional',
+      path: '/reportes/resumen',
+      alias: '/gestion-institucional',
       name: 'gestionInstitucional',
       component: () => import('@/views/GestionInstitucionalView.vue'),
+      props: { seccion: 'resumen' },
       meta: { roles: ['Administrador', 'Operador', 'Auditor'] },
     },
     {

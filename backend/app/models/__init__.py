@@ -59,3 +59,4 @@ from app.models.cobertura import CoberturaArticulo, TramoCobertura
 from app.models.control_alertas import CasoControl, RevisionControl
 from app.models.analitica_operativa import ModeloOperativo, ResultadoOperativo
 from app.models.cierre_anual import CierreAnual
+from app.models.automatizacion_analitica import PoliticaAnalitica, ResultadoSeguimiento, RevisionSeguimiento  # noqa: F401

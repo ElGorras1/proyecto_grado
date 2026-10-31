@@ -5,7 +5,7 @@ const { get, post, auth } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), aut
 vi.mock('@/services/api', () => ({ default: { get, post } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 vi.mock('@/components/DocumentosOperativos.vue', () => ({ default: { template: '<section />' } }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn().mockResolvedValue(undefined) }) }))
 let articulo: { id: number; codigo: string; nombre: string; stock_actual: number | null;
   apertura: Record<string, unknown> | null; base_kardex?: Record<string, unknown> }
 beforeEach(() => {

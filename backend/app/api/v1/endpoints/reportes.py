@@ -80,7 +80,9 @@ def _fila(mov, activo):
         "pagina": mov.numero_pagina,
         "orden_fila": mov.orden_fila,
         "detalle": mov.detalle,
-        "referencia": mov.referencia,
+        "referencia": (
+            (mov.referencia_documento or mov.referencia) if mov.lote_id is None else mov.referencia
+        ),
         "area_original": mov.area,
         "nodo": mov.nodo_grafo,
         "tipo_operacion": mov.tipo_operacion,

@@ -5,7 +5,7 @@ import RevisionHil from '@/components/RevisionHil.vue'
 import MarcaDocumental from '@/components/MarcaDocumental.vue'
 import ObservacionHilArticulo from '@/components/ObservacionHilArticulo.vue'
 import BuscadorArticulos from '@/components/BuscadorArticulos.vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 import { GESTION_DOCUMENTAL_HASTA, ultimaGestionDocumental } from '@/config/alcance'
@@ -143,6 +143,7 @@ const erroresFiltrados = computed(() => erroresPorTanda.value.filter(m =>
   (!categoriaHIL.value || m.tratamiento_hil?.categorias.includes(categoriaHIL.value))))
 const auth = useAuthStore()
 const route = useRoute()
+const router = useRouter()
 const puedeCorregir = computed(() => auth.rol === 'Administrador' || auth.rol === 'Operador')
 const puedeRevisarCobertura = computed(() => auth.rol === 'Administrador' || auth.rol === 'Auditor')
 interface FilaCierre {
@@ -265,6 +266,7 @@ function seleccionarArticulo(art: Articulo, tab: 'historial' | 'hil' | 'grafo' |
 
 function irACrearArticulo() {
   articuloSeleccionado.value = null
+  void router.replace({ query: { ...route.query, articulo_id: undefined, tab: undefined } }).catch(() => {})
   nuevoArticuloNombre.value = ''
   vistaActual.value = 'crear'
   mensajeExito.value = ''
@@ -273,6 +275,7 @@ function irACrearArticulo() {
 
 function irABuscar() {
   articuloSeleccionado.value = null
+  void router.replace({ query: { ...route.query, articulo_id: undefined, tab: undefined } }).catch(() => {})
   vistaActual.value = 'buscar'
   buscarTexto.value = ''
   cargarArticulos()
@@ -337,6 +340,7 @@ async function cargarErroresHIL() {
 
 function cambiarPestaña(tab: 'historial' | 'hil' | 'grafo' | 'cobertura') {
   subPestaña.value = tab
+  if (articuloSeleccionado.value) void router.replace({ query: { ...route.query, articulo_id: articuloSeleccionado.value.id, tab } }).catch(() => {})
   if (tab === 'historial') cargarHistorial()
   if (tab === 'hil') cargarErroresHIL()
   if (tab === 'cobertura') cargarCobertura()

@@ -4,7 +4,7 @@ import api from '@/services/api'
 import ReporteInventarioView from './ReporteInventarioView.vue'
 
 const { routeQuery } = vi.hoisted(() => ({ routeQuery: {} as Record<string, string> }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: routeQuery }) }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: routeQuery }), useRouter: () => ({ replace: vi.fn().mockResolvedValue(undefined) }) }))
 vi.mock('@/services/api', () => ({ default: { get: vi.fn() } }))
 const obtener = vi.mocked(api.get)
 

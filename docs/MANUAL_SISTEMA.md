@@ -14,12 +14,13 @@ El alcance de datos institucionales del proyecto llega hasta **2025**. Esta es l
 última gestión de referencia documental, aunque la aplicación se ejecute después.
 Las fechas de los documentos y las fechas de registro se conservan por separado;
 no se cambia el reloj ni se vuelven a ingresar los históricos como operaciones
-actuales. Para consultar el detector, abrir Analítica histórica, seleccionar la
-versión del 20/10, elegir Gestión documental 2025 y aplicar filtros. Puede combinarse
-con el nombre o código del artículo y la selección de alertas. El filtro muestra
-puntajes ya calculados; no entrena un modelo nuevo ni confirma una irregularidad.
+actuales. El trabajo cotidiano se inicia en Revisiones y alertas: elegir un aviso
+y abrir su evidencia. El sistema utiliza la referencia configurada sin exigir que
+el personal seleccione versiones. En Consulta del análisis histórico se puede
+filtrar el corte conservado por gestión y artículo. Consultar no entrena un modelo
+nuevo ni confirma una irregularidad.
 
-El panel «Qué gestiones ya tienen puntuación» resume disponibles, elegibles,
+Al desplegar la cobertura de todas las gestiones se muestran disponibles, elegibles,
 puntuados, alertas y no elegibles de cada año del corte. «Ver gestión» abre su
 consulta. «Artículo del corte» selecciona una identidad exacta; la búsqueda de
 texto sigue disponible al consultar todos los artículos. Un artículo sin elegibles
@@ -45,22 +46,15 @@ con año asignable porque una fila fue marcada después como fecha estimada. Los
 
 ## Herramientas y permisos
 
-| Herramienta | Uso principal |
+| Espacio de trabajo | Uso principal |
 |---|---|
-| Kárdex digital | Artículos, fotografías, cargas por tandas, historial, HIL y cobertura documental. |
-| Inventario actual | Aperturas, existencias por área, ingresos, salidas, devoluciones, transferencias, custodias y rectificaciones. |
-| Reportes | Consulta por gestión, artículo y área, movimientos y exportación. |
-| Analítica y auditoría histórica | Reglas, versiones, entrenamiento, resultados y revisión de hallazgos. |
-| Analítica de operaciones digitales | Controles y preparación de un modelo separado para eventos operativos. |
-| Informe institucional y cierres anuales | Balances, cierre, reapertura y versiones conservadas. |
-| Alertas y seguimiento | Evidencia, prioridad, asignación, revisión y conclusión de casos. |
-| Preparación del inventario | Prioridades y fichas imprimibles para cotejar y contar. |
-| Validación del proyecto | Estudios documentales y del detector, etiquetas independientes e informe verificable. |
-| Gestión de usuarios | Cuentas, roles, estado y adscripción. |
-| Áreas y catálogos | Ubicaciones operativas, catálogo histórico, alias y cambios auditados. |
-| Registro de accesos | Consulta de accesos por fecha, usuario y resultado. |
+| Artículos e inventario | Kárdex, fotografías, HIL, cobertura, grafo y operaciones. Al cambiar entre Kárdex y operaciones se conserva el artículo seleccionado. Preparación del conteo aparece en Más herramientas. |
+| Revisiones y alertas | Bandeja de pendientes con origen documental, modelo o control operativo. Cada aviso abre su evidencia y su formulario correspondiente. Los avisos HIL ya categorizados se incluyen solo al solicitarlo. |
+| Reportes | Movimientos filtrados y CSV para Excel, resumen institucional imprimible/PDF y balance/cierre por separado. Se conserva la gestión al cambiar de apartado. JSON queda como exportación avanzada. |
+| Administración | Usuarios, áreas, accesos y mantenimiento del análisis. Los parámetros del modelo, estudios de validación y modelo digital están dentro de Herramientas avanzadas. |
 
-Administrador tiene 12 accesos; Auditor, 11; Operador, 9. Los tres consultan
+El inicio presenta cuatro espacios para Administrador/Auditor y tres para Operador.
+Los permisos de las funciones se conservan aunque cambie su ubicación. Los tres consultan
 inventario, Kárdex y evidencia. Administrador gestiona cuentas y autoriza aperturas,
 ajustes, rectificaciones y cierres. Operador registra operaciones y corrige lecturas
 documentales con evidencia. Auditor revisa cobertura, estudios y casos; consulta
@@ -70,6 +64,33 @@ reservan a Administrador/Auditor. El servidor verifica los permisos en cada soli
 
 La adscripción de una cuenta identifica su área; el acceso operativo sigue regido
 por rol. Una separación institucional adicional por área requiere definición y pruebas.
+
+### Análisis y mantenimiento automáticos
+
+El servidor comprueba cada cinco minutos los movimientos históricos nuevos o
+modificados que superan los controles y pertenecen al alcance hasta 2025. Aplica
+el modelo de referencia conservado; no vuelve a ajustarlo para obtener cada
+puntuación. Las inferencias nuevas quedan en seguimiento separado, con fotografía,
+valores, huella, versión y revisión propia. Los resultados del corte de evaluación
+no se reemplazan. Un aviso requiere cotejo; una puntuación no confirma una discrepancia.
+
+Cada treinta días comprueba si cambiaron los datos relevantes para entrenamiento.
+Sin cambios no prepara otra versión. Cuando existen cambios y hay grupos y filas
+suficientes, prepara automáticamente un candidato con separación por artículo.
+Se conserva el modelo en uso mientras se comprueba la versión candidata. Seleccionar
+otra referencia es mantenimiento avanzado, exige motivo y comprobaciones técnicas;
+la consistencia técnica no acredita por sí sola una mejora de precisión.
+
+El personal consulta Revisiones y alertas y documenta el cotejo. No necesita
+solicitar entrenamientos ni elegir parámetros. Administración → Mantenimiento del
+análisis permite consultar el último intento, errores y próxima revisión. Solo
+Administrador modifica la configuración; Auditor puede consultarla. Una
+configuración desactualizada no sobrescribe cambios de otra persona.
+
+Las tareas funcionan mientras el servidor está iniciado. Tras una interrupción,
+las comprobaciones vencidas se retoman al arrancar. Si falla el modelo o su archivo
+no coincide con la huella conservada, no se publican nuevas puntuaciones y se muestra
+el problema en mantenimiento. Pausar la programación no modifica el archivo ni sus datos.
 
 Crear, editar, desactivar, reactivar o restablecer la contraseña guarda el cambio y
 su auditoría en una misma transacción. Si la auditoría falla, el cambio se revierte.
@@ -231,7 +252,7 @@ Con PostgreSQL y dependencias preparados, iniciar desde la raíz:
 
 Interfaz: `http://localhost:5173/`. La API usa `VITE_API_BASE_URL`; por defecto,
 `http://127.0.0.1:8000/api/v1`. En esta instalación está configurada en el puerto
-8010. El iniciador lee los archivos de entorno de desarrollo en la misma precedencia
+8011. El iniciador lee los archivos de entorno de desarrollo en la misma precedencia
 que Vite y comprueba el puerto configurado.
 El iniciador usa la instalación existente; no inicializa la base. La conexión, claves
 y demás configuración se guardan en `.env`, fuera de Git. Referencia de entorno:

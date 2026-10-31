@@ -348,7 +348,11 @@ onMounted(async () => {
     errorCatalogos.value =
       'No se pudieron cargar los artículos o revisores. Recarga esta página para usar esos filtros.'
   }
-  if (!desmontado) await cargar()
+  if (!desmontado) {
+    await cargar()
+    const id = Number(route.query.caso_id)
+    if (!desmontado && Number.isInteger(id) && id > 0) await abrir(id)
+  }
 })
 </script>
 

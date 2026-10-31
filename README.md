@@ -5,6 +5,17 @@ Fundación Simón I. Patiño · Documentación actualizada el 31/10/2026.
 Digitaliza Kárdex, conserva fotografías y revisiones humanas, gestiona inventario y
 operaciones por área, genera reportes y apoya la auditoría con reglas e Isolation Forest.
 
+El uso cotidiano se organiza en cuatro espacios: **Artículos e inventario**,
+**Revisiones y alertas**, **Reportes** y **Administración**. Reportes reúne movimientos,
+resumen y cierre en apartados separados; consultar el archivo no exige registrar
+un cierre. La bandeja abre la evidencia del aviso y conserva su origen.
+
+La instalación comprueba datos nuevos cada cinco minutos y la necesidad de actualizar
+el modelo cada treinta días. Usa los pesos conservados y guarda el seguimiento por
+separado. Sin cambios omite el entrenamiento; con cambios suficientes puede preparar
+un candidato, conservando la referencia en uso. Parámetros y estudios quedan en
+herramientas avanzadas, sin exigir entrenamiento manual para el trabajo cotidiano.
+
 ## Documentación principal
 
 | Leer | Documento | Contenido |
@@ -37,7 +48,7 @@ Con PostgreSQL y dependencias preparados, ejecutar desde la raíz:
 
 Interfaz: `http://localhost:5173/`. La API utiliza el puerto indicado por
 `VITE_API_BASE_URL` en los archivos de entorno del frontend: 8000 por defecto y
-8010 en la instalación local revisada. El iniciador respeta esa configuración.
+8011 en la instalación local revisada. El iniciador respeta esa configuración.
 El inicio usa la instalación existente. El manual contiene las comprobaciones y el respaldo.
 
 Para una instalación nueva, usar los archivos de dependencias fijadas y la sección

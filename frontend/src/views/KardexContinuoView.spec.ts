@@ -4,7 +4,7 @@ import KardexContinuoView from './KardexContinuoView.vue'
 const { get, post, put, auth, ruta } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), auth: { rol: 'Administrador' }, ruta: {} as Record<string, string> }))
 vi.mock('@/services/api', () => ({ default: { get, post, put, defaults: { baseURL: 'http://localhost:8000/api/v1' } } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: ruta }) }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: ruta }), useRouter: () => ({ replace: vi.fn().mockResolvedValue(undefined) }) }))
 const filas = [1, 2].map(tanda => ({ id: tanda, lote_id: tanda, tanda, fecha_movimiento: '2025-01-01', detalle: `Documento tanda ${tanda}`, ingresos: 5, salidas: null, saldo_registrado: 5, tiene_error_saldo: true, tipos_alerta: ['saldo'], numero_pagina: 1 }))
 beforeEach(() => {
  auth.rol = 'Administrador'

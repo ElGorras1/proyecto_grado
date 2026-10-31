@@ -42,3 +42,6 @@ from app.api.v1.endpoints import preparacion_inventario
 api_router.include_router(preparacion_inventario.router)
 from app.api.v1.endpoints import validacion_independiente
 api_router.include_router(validacion_independiente.router)
+from app.api.v1.endpoints import automatizacion_analitica, revisiones
+api_router.include_router(automatizacion_analitica.router)
+api_router.include_router(revisiones.router)

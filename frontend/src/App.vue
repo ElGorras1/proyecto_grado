@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
 import MarcaInstitucional from '@/components/MarcaInstitucional.vue'
+import NavegacionTrabajo from '@/components/NavegacionTrabajo.vue'
 const route = useRoute()
 </script>
 
@@ -11,6 +12,7 @@ const route = useRoute()
       <span class="nombre-sistema">Gestión de inventario<span>Archivo histórico y operaciones</span></span>
     </div>
   </header>
+  <NavegacionTrabajo v-if="!route.meta.public" />
   <router-view />
 </template>
 

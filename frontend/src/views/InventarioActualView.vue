@@ -7,7 +7,7 @@ import TrazabilidadArticulo from '@/components/TrazabilidadArticulo.vue'
 import RectificacionLogistica from '@/components/RectificacionLogistica.vue'
 import DocumentosOperativos from '@/components/DocumentosOperativos.vue'
 import type { ClaseLogistica, DatosLogisticos, FuenteLogistica, RectificableLogistico } from '@/services/rectificacionLogistica'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 interface Articulo {
   id: number
@@ -157,6 +157,7 @@ interface AlertaControl {
 
 const auth = useAuthStore()
 const route = useRoute()
+const router = useRouter()
 const esAdmin = computed(() => auth.rol === 'Administrador')
 const puedeOperar = computed(() => esAdmin.value || auth.rol === 'Operador')
 const fuenteLogistica = ref<FuenteLogistica | null>(null)
@@ -792,6 +793,7 @@ function verDetalle(art: Articulo) {
   fuenteLogistica.value = null
   mostrarTrazabilidad.value = false
   articuloSeleccionado.value = art
+  void router.replace({ query: { ...route.query, articulo_id: art.id } }).catch(() => {})
   existenciasArea.value = null
   transferenciasArea.value = []
   custodiasExternas.value = []
@@ -869,6 +871,7 @@ function irANuevoProducto() {
 function volver() {
   vistaActual.value = 'buscar'
   articuloSeleccionado.value = null
+  void router.replace({ query: { ...route.query, articulo_id: undefined } }).catch(() => {})
   cargarArticulos()
 }
 

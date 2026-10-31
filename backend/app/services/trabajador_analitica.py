@@ -175,6 +175,10 @@ def ciclo():
                             )
                             if j:
                                 ejecutar(db, j.id)
+                            else:
+                                from app.services.automatizacion_analitica import ejecutar_ciclo, esquema_disponible
+                                if esquema_disponible(db):
+                                    ejecutar_ciclo(db)
                     fallo_reportado = False
                 finally:
                     if adquirido:

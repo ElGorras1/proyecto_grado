@@ -1,13 +1,14 @@
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import GestionInstitucionalView from './GestionInstitucionalView.vue'
-const { get, post, auth, ruta } = vi.hoisted(() => ({
+const { get, post, auth, ruta, reemplazar } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   auth: { rol: 'Administrador' },
   ruta: {} as Record<string, string>,
+  reemplazar: vi.fn(),
 }))
-vi.mock('vue-router', async importOriginal => ({ ...await importOriginal<typeof import('vue-router')>(), useRoute: () => ({ query: ruta }) }))
+vi.mock('vue-router', async importOriginal => ({ ...await importOriginal<typeof import('vue-router')>(), useRoute: () => ({ query: ruta }), useRouter: () => ({ replace: reemplazar }) }))
 vi.mock('@/services/api', () => ({ default: { get, post } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 let permitido = true
@@ -28,6 +29,7 @@ beforeEach(() => {
   Object.keys(ruta).forEach(k => delete ruta[k])
   get.mockReset()
   post.mockReset()
+  reemplazar.mockReset(); reemplazar.mockResolvedValue(undefined)
   get.mockImplementation((url: string) =>
     Promise.resolve({
       data: url.endsWith('vista-previa')
@@ -35,7 +37,7 @@ beforeEach(() => {
             snapshot: {
               gestion: 2025,
               total: 100,
-              articulos: [],
+              articulos: [{ articulo_id: 1, total: 100 }],
               alcance: 'Solo digital',
               corte_exclusivo: '2027-01-01T04:00:00Z',
             },
@@ -53,6 +55,54 @@ function montar() {
   return mount(GestionInstitucionalView, { global: { stubs: { RouterLink: RouterLinkStub } } })
 }
 describe('Gestión institucional', () => {
+  it('comparte la gestión consultada desde el resumen con los otros apartados', async () => {
+    ruta.gestion = '2025'
+    const w = mount(GestionInstitucionalView, { props: { seccion: 'resumen' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    await w.get('form.filtros input').setValue(2019)
+    await w.get('form.filtros').trigger('submit'); await flushPromises()
+    expect(reemplazar).toHaveBeenCalledWith({ query: { gestion: 2019 } })
+    w.unmount()
+  })
+  it('consulta el resumen sin cargar vista previa ni cierres', async () => {
+    const w = mount(GestionInstitucionalView, { props: { seccion: 'resumen' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(get.mock.calls.map(c => c[0])).toEqual(['/reportes/institucional'])
+    expect(w.text()).toContain('Resumen institucional')
+    expect(w.text()).not.toContain('Registros digitales de')
+    expect(w.text()).toContain('Saldos documentales')
+    expect(w.find('.cierre-form').exists()).toBe(false)
+    expect(w.text()).not.toContain('Cierres conservados de todas las gestiones')
+    expect(post).not.toHaveBeenCalled()
+    w.unmount()
+  })
+  it('consulta el cierre por separado y no propone guardar un balance vacío', async () => {
+    const original = get.getMockImplementation()!
+    get.mockImplementation(async (url: string) => {
+      const r = await original(url)
+      if (url.endsWith('vista-previa')) r.data.snapshot.articulos = []
+      return r
+    })
+    const w = mount(GestionInstitucionalView, { props: { seccion: 'cierres' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(get.mock.calls.map(c => c[0])).not.toContain('/reportes/institucional')
+    expect(w.text()).toContain('no necesitas registrar un cierre vacío')
+    expect(w.find('.cierre-form').exists()).toBe(false)
+    expect(post).not.toHaveBeenCalled()
+    w.unmount()
+  })
+  it('vuelve a cargar al pasar del resumen al cierre sin reutilizar información de la otra pantalla', async () => {
+    const w = mount(GestionInstitucionalView, { props: { seccion: 'resumen' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    await w.setProps({ seccion: 'cierres' }); await flushPromises()
+    expect(w.text()).toContain('Vista previa del cierre')
+    expect(w.text()).not.toContain('Saldo documental sin activar')
+    await w.setProps({ seccion: 'resumen' }); await flushPromises()
+    expect(w.text()).toContain('Saldo documental sin activar')
+    expect(w.find('.cierre-form').exists()).toBe(false)
+    expect(post).not.toHaveBeenCalled()
+    w.unmount()
+  })
   it('consulta inicialmente la referencia documental 2025 sin registrar cierres', async () => {
     const w = montar()
     await flushPromises()

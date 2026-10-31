@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { GESTION_DOCUMENTAL_HASTA } from '@/config/alcance'
+const props = withDefaults(defineProps<{ seccion?: 'resumen' | 'cierres' | 'completo' }>(), { seccion: 'completo' })
+const titulo = computed(() => props.seccion === 'cierres' ? 'Balance y cierre de gestión' : props.seccion === 'resumen' ? 'Resumen institucional' : 'Informe institucional y cierres anuales')
 
 interface Saldo {
   articulo_id: number
@@ -82,7 +84,9 @@ interface Informe {
 }
 const auth = useAuthStore()
 const admin = computed(() => auth.rol === 'Administrador')
-const gestionEnlace = Number(useRoute().query.gestion)
+const ruta = useRoute()
+const router = useRouter()
+const gestionEnlace = Number(ruta.query.gestion)
 const gestion = ref(Number.isInteger(gestionEnlace) && gestionEnlace >= 1900 && gestionEnlace <= 9998
   ? gestionEnlace : GESTION_DOCUMENTAL_HASTA)
 const informe = ref<Informe | null>(null),
@@ -110,6 +114,7 @@ const eventos = computed(
     informe.value?.movimientos.slice((paginaEventos.value - 1) * 30, paginaEventos.value * 30) ??
     [],
 )
+const hayInventarioActivado = computed(() => informe.value?.inventario_actual.some(a => a.operativo) ?? false)
 const historicoGestion = computed(
   () =>
     informe.value?.cobertura_historica.por_gestion?.[String(informe.value.gestion)] ?? {
@@ -148,9 +153,9 @@ async function cargar() {
   revisado.value = false
   try {
     const [i, p, c] = await Promise.all([
-      api.get('/reportes/institucional', { params: { gestion: gestion.value } }),
-      api.get(`/cierres-anuales/${gestion.value}/vista-previa`),
-      api.get('/cierres-anuales', { params: { pagina: paginaCierres.value, limite: 20 } }),
+      props.seccion !== 'cierres' ? api.get('/reportes/institucional', { params: { gestion: gestion.value } }) : Promise.resolve({ data: null }),
+      props.seccion !== 'resumen' ? api.get(`/cierres-anuales/${gestion.value}/vista-previa`) : Promise.resolve({ data: null }),
+      props.seccion !== 'resumen' ? api.get('/cierres-anuales', { params: { pagina: paginaCierres.value, limite: 20 } }) : Promise.resolve({ data: { filas: [], total: 0 } }),
     ])
     if (turno !== consulta) return
     informe.value = i.data
@@ -158,6 +163,7 @@ async function cargar() {
     cierres.value = c.data.filas
     totalCierres.value = c.data.total
     paginaStock.value = paginaEventos.value = 1
+    if (String(ruta.query.gestion ?? '') !== String(gestion.value)) void router.replace({ query: { ...ruta.query, gestion: gestion.value } }).catch(() => {})
   } catch (e) {
     if (turno === consulta) error.value = detalle(e)
   } finally {
@@ -168,6 +174,14 @@ function consultar() {
   paginaCierres.value = 1
   void cargar()
 }
+watch([() => props.seccion, () => ruta.query.gestion], ([seccion, parametro], [anterior]) => {
+  const anio = Number(parametro)
+  const valido = Number.isInteger(anio) && anio >= 1900 && anio <= 9998
+  if (seccion === anterior && (!valido || anio === gestion.value)) return
+  if (valido) gestion.value = anio
+  documento.value = motivo.value = mensaje.value = ''
+  consultar()
+})
 function paginarCierres(delta: number) {
   paginaCierres.value += delta
   void cargar()
@@ -253,8 +267,9 @@ onMounted(cargar)
     <header>
       <div>
         <router-link to="/">Volver al inicio</router-link>
-        <h1>Informe institucional y cierres anuales</h1>
-        <p>Saldos actuales, registros de cada gestión y balances conservados para auditoría.</p>
+        <h1>{{ titulo }}</h1>
+        <p v-if="props.seccion === 'cierres'">Conserva un balance revisado cuando exista inventario operativo. Consultar el archivo histórico no exige cerrar una gestión.</p>
+        <p v-else>Saldos documentales, inventario activado y registros de la gestión consultada.</p>
         <p>El proyecto utiliza documentos hasta {{ GESTION_DOCUMENTAL_HASTA }}. Los saldos actuales y las fechas de registro digital se presentan por separado.</p>
       </div>
     </header>
@@ -270,15 +285,9 @@ onMounted(cargar)
           :disabled="enviando || cargando"
       /></label>
       <button :disabled="cargando || enviando">Consultar</button>
-      <button
-        type="button"
-        :disabled="!informe || cargando"
-        @click="descargar(informe, `informe_institucional_${informe!.gestion}.json`)"
-      >
-        Descargar informe completo
-      </button>
-      <button type="button" :disabled="!informe" @click="imprimir">Imprimir esta vista</button>
+      <button type="button" :disabled="!informe && !previa" @click="imprimir">Imprimir o guardar PDF</button>
     </form>
+    <details v-if="informe && props.seccion !== 'cierres'" class="exportacion-avanzada"><summary>Exportación avanzada</summary><button :disabled="cargando" @click="descargar(informe, `informe_institucional_${informe.gestion}.json`)">Descargar informe completo en JSON</button></details>
     <p v-if="cargando" role="status">Preparando informe y balance…</p>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
     <p v-if="mensaje" role="status">{{ mensaje }}</p>
@@ -297,6 +306,7 @@ onMounted(cargar)
           Se agrupan por la fecha del papel. No se cuentan como operaciones digitales nuevas ni
           certifican un cierre físico anual.
         </p>
+        <p>Cobertura del archivo físico: {{ informe.cobertura_historica.porcentaje_fisico === null ? 'sin porcentaje verificado' : `${informe.cobertura_historica.porcentaje_fisico}%` }}.</p>
         <p>
           <router-link
             :to="{
@@ -311,7 +321,7 @@ onMounted(cargar)
           >
         </p>
       </section>
-      <section class="panel">
+      <section v-if="informe.resumen_periodo.eventos > 0" class="panel">
         <h2>Registros digitales de {{ informe.gestion }}</h2>
         <p>
           Se agrupan por fecha de registro en Bolivia. Una transferencia o entrega a custodia
@@ -372,7 +382,7 @@ onMounted(cargar)
         </p>
       </section>
       <section class="panel">
-        <h2>Inventario actual</h2>
+        <h2>{{ hayInventarioActivado ? 'Inventario actual' : 'Saldos documentales' }}</h2>
         <p>
           El filtro de gestión cambia los registros del período y la vista previa del cierre. Esta
           tabla conserva los saldos actuales.
@@ -401,7 +411,7 @@ onMounted(cargar)
             <thead>
               <tr>
                 <th>Artículo</th>
-                <th>Saldo actual</th>
+                <th>Saldo registrado</th>
                 <th>Base</th>
                 <th>Sin ubicación</th>
                 <th>Custodia externa</th>
@@ -446,10 +456,9 @@ onMounted(cargar)
       <ul v-if="previa.impedimentos.length">
         <li v-for="i in previa.impedimentos" :key="i">{{ i }}</li>
       </ul>
-      <button @click="descargar(previa, `balance_previo_${previa.snapshot.gestion}.json`)">
-        Descargar balance para revisión
-      </button>
-      <form v-if="admin" class="cierre-form" @submit.prevent="cerrar">
+      <details class="exportacion-avanzada"><summary>Exportación avanzada del balance</summary><button @click="descargar(previa, `balance_previo_${previa.snapshot.gestion}.json`)">Descargar balance en JSON</button></details>
+      <p v-if="!previa.snapshot.articulos.length" role="status">No hay inventario operativo incluido en este balance. Puedes seguir consultando documentos y reportes; no necesitas registrar un cierre vacío.</p>
+      <form v-if="admin && previa.snapshot.articulos.length" class="cierre-form" @submit.prevent="cerrar">
         <label
           >Documento de respaldo
           <input
@@ -467,11 +476,11 @@ onMounted(cargar)
         >
         <button :disabled="!puedeCerrar">Guardar cierre anual</button>
       </form>
-      <p v-else>
+      <p v-else-if="!admin">
         El Administrador puede guardar un cierre tras revisar el balance y sus impedimentos.
       </p>
     </section>
-    <section class="panel">
+    <section v-if="props.seccion !== 'resumen'" class="panel">
       <h2>Cierres conservados de todas las gestiones</h2>
       <p v-if="!cierres.length">Todavía no hay cierres anuales guardados.</p>
       <article v-for="c in cierres" :key="c.id">
@@ -515,6 +524,8 @@ onMounted(cargar)
 </template>
 
 <style scoped>
+.exportacion-avanzada { margin: .5rem 0 1rem; }
+.exportacion-avanzada summary { cursor: pointer; color: var(--text-secondary); }
 .gestion {
   max-width: 1200px;
   margin: auto;
@@ -635,6 +646,7 @@ article {
 @media print {
   button,
   .cierre-form,
+  .exportacion-avanzada,
   .filtros {
     display: none;
   }

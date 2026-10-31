@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { GESTION_DOCUMENTAL_HASTA, ultimaGestionDocumental } from '@/config/alcance'
 
@@ -73,6 +73,8 @@ const nombresMes = [
   'Dic',
 ]
 const route = useRoute()
+const router = useRouter()
+const sinGestionSolicitada = route.query.sin_fecha === '1'
 const gestionEnlace = Number(route.query.gestion)
 const gestionSolicitada =
   Number.isInteger(gestionEnlace) && gestionEnlace >= 1900 && gestionEnlace <= 2100
@@ -132,6 +134,7 @@ async function cargarReporte(pagina = 1, nuevosFiltros = false) {
     })
     reporte.value = data
     aplicados.value = seleccion
+    if (nuevosFiltros) void router.replace({ query: { ...route.query, gestion: seleccion.gestion || undefined, sin_fecha: seleccion.gestion === '' ? '1' : undefined, origen: seleccion.origen } }).catch(() => {})
   } catch {
     error.value = 'No se pudo generar el reporte. Revisa la conexión e inténtalo de nuevo.'
   } finally {
@@ -173,7 +176,7 @@ onMounted(async () => {
     if (gestionSolicitada !== null) {
       if (!gestiones.value.includes(gestionSolicitada))
         gestiones.value = [...gestiones.value, gestionSolicitada].sort((a, b) => b - a)
-    } else filtros.value.gestion = ultimaGestionDocumental(data.gestiones_historicas ?? gestiones.value)
+    } else if (!sinGestionSolicitada) filtros.value.gestion = ultimaGestionDocumental(data.gestiones_historicas ?? gestiones.value)
     await cargarReporte(1, true)
   } catch {
     error.value = 'No se pudieron cargar las gestiones disponibles.'
@@ -198,9 +201,11 @@ const numero = (n: number) => new Intl.NumberFormat('es-BO').format(n)
         {{ exportando ? 'Preparando CSV…' : '↓ Descargar CSV' }}
       </button>
       <router-link
+        v-if="(aplicados?.gestion ?? filtros.gestion) !== ''"
         :to="{ name: 'analitica', query: { gestion: aplicados?.gestion ?? filtros.gestion } }"
         >Analizar esta gestión</router-link
       >
+      <router-link v-else :to="{ name: 'revisiones', query: { sin_fecha: '1' } }">Revisar documentos sin fecha completa</router-link>
     </header>
 
     <p v-if="filtrosPendientes" role="status">Hay filtros sin aplicar. La tabla y la descarga conservan la última consulta; pulsa «Aplicar filtros» para actualizarlas.</p>

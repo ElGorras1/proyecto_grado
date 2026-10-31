@@ -17,8 +17,13 @@ def _datos(db):
     rol = Rol(nombre="Auditor", estado="activo")
     db.add(rol)
     db.flush()
-    usuario = Usuario(rol_id=rol.id, nombre="Auditora", email="aud@test.com",
-                      password_hash=hash_password("Password123!"), estado="activo")
+    usuario = Usuario(
+        rol_id=rol.id,
+        nombre="Auditora",
+        email="aud@test.com",
+        password_hash=hash_password("Password123!"),
+        estado="activo",
+    )
     categoria = CategoriaActivo(nombre="Libros", estado="activo")
     db.add_all([usuario, categoria])
     db.flush()
@@ -28,16 +33,35 @@ def _datos(db):
     db.add_all([a, b, lote])
     db.flush()
 
-    def mov(articulo, fecha, ingreso=0, salida=0, lote_id=None, nodo="Área: Biblioteca",
-            pendiente=False, estado="ACTIVO", detalle="Registro"):
-        db.add(MovimientoKardex(
-            articulo_id=articulo.id, fecha_movimiento=fecha, detalle=detalle,
-            ingresos=ingreso or None, salidas=salida or None, saldo_registrado=10,
-            lote_id=lote_id, nodo_grafo=nodo, estado=estado,
-            tiene_error_saldo=pendiente, requiere_auditoria_nodo=False,
-            requiere_auditoria_referencia=False, area_estado="RESUELTA_AUTOMATICAMENTE",
-            referencia_estado="AUSENTE",
-        ))
+    def mov(
+        articulo,
+        fecha,
+        ingreso=0,
+        salida=0,
+        lote_id=None,
+        nodo="Área: Biblioteca",
+        pendiente=False,
+        estado="ACTIVO",
+        detalle="Registro",
+    ):
+        db.add(
+            MovimientoKardex(
+                articulo_id=articulo.id,
+                fecha_movimiento=fecha,
+                detalle=detalle,
+                ingresos=ingreso or None,
+                salidas=salida or None,
+                saldo_registrado=10,
+                lote_id=lote_id,
+                nodo_grafo=nodo,
+                estado=estado,
+                tiene_error_saldo=pendiente,
+                requiere_auditoria_nodo=False,
+                requiere_auditoria_referencia=False,
+                area_estado="RESUELTA_AUTOMATICAMENTE",
+                referencia_estado="AUSENTE",
+            )
+        )
 
     mov(a, date(2025, 12, 31), ingreso=30, lote_id=lote.id)
     mov(a, date(2026, 1, 2), ingreso=10, lote_id=lote.id)
@@ -56,25 +80,52 @@ def test_reporte_gestion_resumen_filtros_y_paginacion(client, db_session):
     assert respuesta.status_code == 200, respuesta.text
     data = respuesta.json()
     assert data["resumen"] == {
-        "movimientos": 3, "articulos": 2, "ingresos": 10, "salidas": 5,
-        "pendientes_hil": 1, "historicos": 2, "modernos": 1,
+        "movimientos": 3,
+        "articulos": 2,
+        "ingresos": 10,
+        "salidas": 5,
+        "pendientes_hil": 1,
+        "historicos": 2,
+        "modernos": 1,
     }
     assert len(data["filas"]) == 2
     assert data["mensual"][0]["ingresos"] == 10
     assert data["mensual"][1]["salidas"] == 5
-    pagina2 = client.get(url, headers=_cabecera(usuario), params={"gestion": 2026, "limite": 2, "pagina": 2})
+    pagina2 = client.get(
+        url, headers=_cabecera(usuario), params={"gestion": 2026, "limite": 2, "pagina": 2}
+    )
     assert len(pagina2.json()["filas"]) == 1
     assert pagina2.json()["resumen"] == data["resumen"]
 
-    filtros = {"gestion": 2026, "mes": 2, "articulo": "LIB-001", "origen": "historico",
-               "direccion": "salida", "nodo": "Área: Biblioteca", "revision": "pendiente"}
+    filtros = {
+        "gestion": 2026,
+        "mes": 2,
+        "articulo": "LIB-001",
+        "origen": "historico",
+        "direccion": "salida",
+        "nodo": "Área: Biblioteca",
+        "revision": "pendiente",
+    }
     filtrado = client.get(url, headers=_cabecera(usuario), params=filtros).json()
     assert filtrado["resumen"]["movimientos"] == 1
     assert filtrado["resumen"]["salidas"] == 3
     assert filtrado["filas"][0]["pendiente_hil"] is True
-    assert client.get(url, headers=_cabecera(usuario), params={"gestion": 2026, "revision": "sin_alertas"}).json()["resumen"]["movimientos"] == 2
-    assert client.get(url, headers=_cabecera(usuario), params={"gestion": 2025}).json()["resumen"]["ingresos"] == 30
-    assert client.get(url, headers=_cabecera(usuario), params={"gestion": 2026, "mes": 13}).status_code == 422
+    assert (
+        client.get(
+            url, headers=_cabecera(usuario), params={"gestion": 2026, "revision": "sin_alertas"}
+        ).json()["resumen"]["movimientos"]
+        == 2
+    )
+    assert (
+        client.get(url, headers=_cabecera(usuario), params={"gestion": 2025}).json()["resumen"][
+            "ingresos"
+        ]
+        == 30
+    )
+    assert (
+        client.get(url, headers=_cabecera(usuario), params={"gestion": 2026, "mes": 13}).status_code
+        == 422
+    )
 
 
 def test_opciones_y_csv_respetan_filtros_y_evitan_formulas(client, db_session):
@@ -84,11 +135,30 @@ def test_opciones_y_csv_respetan_filtros_y_evitan_formulas(client, db_session):
     assert opciones["gestiones"] == [2026, 2025]
     assert opciones["gestiones_historicas"] == [2026, 2025]
     assert "Ventas" in opciones["nodos"]
-    assert client.get("/api/v1/reportes/inventario.csv", params={"gestion": 2026}).status_code == 401
-    respuesta = client.get("/api/v1/reportes/inventario.csv", headers=cabecera,
-                           params={"gestion": 2026, "revision": "pendiente"})
+    assert (
+        client.get("/api/v1/reportes/inventario.csv", params={"gestion": 2026}).status_code == 401
+    )
+    respuesta = client.get(
+        "/api/v1/reportes/inventario.csv",
+        headers=cabecera,
+        params={"gestion": 2026, "revision": "pendiente"},
+    )
     assert respuesta.status_code == 200, respuesta.text
     assert "text/csv" in respuesta.headers["content-type"]
     assert respuesta.content.startswith(b"\xef\xbb\xbf")
     assert "'=SUM(1+1)" in respuesta.text
     assert "Libro B" not in respuesta.text
+
+
+def test_reporte_digital_utiliza_la_referencia_del_documento_operativo(client, db_session):
+    usuario = _datos(db_session)
+    moderno = db_session.query(MovimientoKardex).filter(MovimientoKardex.lote_id.is_(None)).first()
+    moderno.referencia = None
+    moderno.referencia_documento = "ACTA-DIGITAL-QA-01"
+    db_session.commit()
+    params = {"gestion": 2026, "origen": "moderno"}
+    h = _cabecera(usuario)
+    datos = client.get("/api/v1/reportes/inventario", params=params, headers=h).json()
+    assert datos["filas"][0]["referencia"] == "ACTA-DIGITAL-QA-01"
+    csv = client.get("/api/v1/reportes/inventario.csv", params=params, headers=h)
+    assert csv.status_code == 200 and "ACTA-DIGITAL-QA-01" in csv.text

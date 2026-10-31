@@ -328,7 +328,11 @@ async function actualizar() {
     error.value = ''
     perfil.value = (await api.get<Perfil>('/analitica/perfil')).data
     await lista()
-    if (!seleccionado.value && modelos.value.length) seleccionado.value = modelos.value[0].id
+    if (!seleccionado.value) {
+      const mantenimiento = await api.get('/automatizacion/estado').then(r => r.data).catch(() => null)
+      seleccionado.value = typeof route.query.modelo === 'string' ? route.query.modelo
+        : mantenimiento?.modelo_base_id ?? modelos.value.find(m => m.estado === 'COMPLETADO')?.id ?? modelos.value[0]?.id ?? ''
+    }
     if (!gestionInicialDefinida) {
       const referencia = modelos.value.find(m => m.id === seleccionado.value)?.perfil ?? perfil.value
       const disponibles = Object.keys(referencia.por_gestion).filter(g => /^\d{4}$/.test(g)).sort()
@@ -451,6 +455,8 @@ async function cambiarPaginaModelos(delta: number) {
 }
 onMounted(async () => {
   await actualizar()
+  const resultado = Number(route.query.resultado_id)
+  if (!desmontado && Number.isInteger(resultado) && resultado > 0) await abrir(resultado)
   if (!desmontado) timer = setTimeout(sondear, 5000)
 })
 onUnmounted(() => {
@@ -467,17 +473,19 @@ onUnmounted(() => {
       <div>
         <router-link to="/">← Inicio</router-link>
         <p class="eyebrow">AUDITORÍA HISTÓRICA</p>
-        <h1>Auditoría histórica con Isolation Forest</h1>
+        <h1>Consulta del análisis histórico</h1>
         <p>Consulta los documentos disponibles hasta 2025 por gestión y artículo, y revisa cada aviso con su evidencia.</p>
       </div>
       <button :disabled="cargando" @click="actualizar">Actualizar datos</button>
     </header>
-    <ReglasHistoricas :gestion-inicial="typeof route.query.gestion === 'string' ? route.query.gestion : ''" />
+    <p v-if="modelo?.datos_cambiaron" class="nota">Esta consulta conserva un corte anterior del archivo. Los avisos de datos nuevos o corregidos se consultan en <router-link :to="{ name: 'revisiones' }">Revisiones y alertas</router-link>.</p>
+    <details class="panel"><summary>Comprobaciones documentales adicionales</summary><ReglasHistoricas :gestion-inicial="typeof route.query.gestion === 'string' ? route.query.gestion : ''" /></details>
     <p class="nota">
       Análisis retrospectivo de varios años. Una puntuación alta indica rareza, no probabilidad de
       fraude. La cobertura del archivo físico sigue siendo desconocida.
     </p>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
+    <details class="herramientas-avanzadas" :open="route.query.avanzado === '1'"><summary>Herramientas avanzadas: datos, versiones y evaluación</summary>
     <section v-if="perfil" class="panel">
       <h2>Preparación del histórico</h2>
       <div class="cifras">
@@ -624,8 +632,8 @@ onUnmounted(() => {
         </p>
         <p v-if="modelo.error" class="error">{{ modelo.error }}</p>
         <p v-if="modelo.datos_cambiaron" class="nota">
-          Hay cambios posteriores al corte. Estos resultados conservan los datos anteriores; entrena
-          otra versión para incorporar las novedades.
+          Hay cambios posteriores al corte. Estos resultados conservan los datos anteriores.
+          El seguimiento automático de datos nuevos se consulta en Revisiones y alertas.
         </p>
         <p>
           Elegibles en este corte: {{ modelo.perfil.elegibles }}. El filtro anual no limita el
@@ -658,7 +666,9 @@ onUnmounted(() => {
         </details>
       </template>
     </section>
-    <section v-if="resumenGestiones && modelo?.estado === 'COMPLETADO'" class="panel" aria-label="Cobertura de Isolation Forest por gestión">
+    </details>
+    <details v-if="resumenGestiones && modelo?.estado === 'COMPLETADO'" class="panel" aria-label="Cobertura de Isolation Forest por gestión">
+      <summary>Consultar la cobertura de todas las gestiones</summary>
       <h2>Qué gestiones ya tienen puntuación</h2>
       <p>{{ resumenGestiones.totales.analizados }} movimientos puntuados · {{ resumenGestiones.totales.alertas }} alertas estadísticas · {{ resumenGestiones.totales.no_elegibles }} registros no elegibles.</p>
       <p>{{ resumenGestiones.alcance }}</p>
@@ -673,7 +683,7 @@ onUnmounted(() => {
           <td><button v-if="/^\d{4}$/.test(g.gestion)" :disabled="cargando" @click="verGestion(g.gestion)">Ver {{ g.gestion }}</button><span v-else>Revisar fecha en HIL</span></td>
         </tr></tbody>
       </table></div>
-    </section>
+    </details>
     <section v-if="modelo?.estado === 'COMPLETADO'" class="panel">
       <h2>Resultados por gestión</h2>
       <form class="filtros" @submit.prevent="aplicarFiltros">
@@ -865,6 +875,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.herramientas-avanzadas > summary, .panel > summary { cursor: pointer; padding: 1rem 0; font-weight: 600; }
 .analitica {
   max-width: 1250px;
   margin: auto;
