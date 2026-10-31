@@ -7,11 +7,12 @@ vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 const cabecera = { version: 2, id: 8, tipo: 'DETECTOR', creada_en: '2026-10-29T14:00:00Z', creada_por: 1,
   modelo_id: 'modelo-qa', semilla: 'qa', referencia_protocolo: 'PROTOCOLO-QA de revisión',
   huella_estudio: 'a'.repeat(64), poblacion: 1615, seleccionadas: 2, alcance: 'Resultados solo de la muestra.' }
+type RevisionEnsayo = { id: number; usuario_id: number; fecha: string; etiqueta: string; motivo: string; referencia: string }
 function detalle() { return { ...cabecera, puede_etiquetar: true, filas: [1, 2].map(id => ({ id, evidencia_vigente: true,
   documento: { articulo: 'Libro de prueba', codigo: 'QA-8', lote_id: 5, numero_pagina: 1, orden_fila: id,
     fecha: null, fecha_documental_texto: 'mayo de 2008', detalle: 'Salida registrada en el documento',
     referencia: null, area: 'Galería', ingresos: null, salidas: 2, saldo_registrado: 18,
-    ruta_imagen_respaldo: 'storage/kardex_images/qa.png' }, revision: null })) } }
+    ruta_imagen_respaldo: 'storage/kardex_images/qa.png' }, revision: null as RevisionEnsayo | null })) } }
 function reporte() { return { ...cabecera, estado: 'PENDIENTE',
   progreso: { seleccionadas: 2, etiquetadas: 0, concluyentes: 0, pendientes: 2,
     evidencias_no_vigentes: 0, modelo_consistente: true },
@@ -54,7 +55,7 @@ describe('Validación del proyecto', () => {
   })
   it('registra explícitamente el segundo cotejo sin asumirlo por una etiqueta indeterminada', async () => {
     const datos = detalle();datos.filas[0].revision = { id: 22, usuario_id: 2, fecha: cabecera.creada_en,
-      etiqueta: 'INDETERMINADO', motivo: 'Respaldo insuficiente en primer cotejo.', referencia: 'ACTA-QA' } as any
+      etiqueta: 'INDETERMINADO', motivo: 'Respaldo insuficiente en primer cotejo.', referencia: 'ACTA-QA' }
     get.mockImplementation((url: string) => Promise.resolve({ data: url === '/validacion/estudios' ? { total: 1, filas: [cabecera] }
       : url === '/validacion/marco' ? { poblacion: 400, filtros: 'Marco técnico' } : url === '/analitica/modelos' ? { filas: [] } : datos }))
     const w = await montar(), form = w.get('[aria-label="Registrar conclusión"]')
