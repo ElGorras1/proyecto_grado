@@ -10,6 +10,15 @@ histórico con el inventario operativo, sus documentos y la auditoría. Usa Vue 
 TypeScript, FastAPI, SQLAlchemy/Alembic y PostgreSQL. Gemini realiza la extracción
 documental; Isolation Forest apoya la selección de movimientos para revisión.
 
+El alcance de datos institucionales del proyecto llega hasta **2025**. Esta es la
+última gestión de referencia documental, aunque la aplicación se ejecute después.
+Las fechas de los documentos y las fechas de registro se conservan por separado;
+no se cambia el reloj ni se vuelven a ingresar los históricos como operaciones
+actuales. Para consultar el detector, abrir Analítica histórica, seleccionar la
+versión del 20/10, elegir Gestión documental 2025 y aplicar filtros. Puede combinarse
+con el nombre o código del artículo y la selección de alertas. El filtro muestra
+puntajes ya calculados; no entrena un modelo nuevo ni confirma una irregularidad.
+
 ## Herramientas y permisos
 
 | Herramienta | Uso principal |

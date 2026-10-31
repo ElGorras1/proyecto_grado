@@ -1,5 +1,30 @@
 # Estado, pruebas y pendientes
 
+## Alcance documental confirmado hasta 2025
+
+El titular indicó que la información institucional autorizada llega hasta 2025 y
+que no dispone de datos institucionales de 2026. El análisis del proyecto utiliza
+los documentos disponibles hasta ese límite, con 2025 como última gestión de
+referencia, sin cambiar la fecha real del equipo ni convertir el histórico en
+operaciones digitales actuales. Los registros de la base fuera del periodo no se
+renombran ni se eliminan automáticamente; quedan separados del estudio.
+
+Isolation Forest histórico ya está entrenado e integrado: la versión del 20/10
+puntúa 8.367 movimientos de 356 artículos entre 2005 y 2025, con 359 alertas en
+el conjunto y 111 en evaluación reservada. El filtro 2025 devuelve 188 resultados
+y cuatro alertas sobre 132 artículos. Se comprobaron consultas por gestión,
+por artículo y por ambos, en una transacción de solo lectura. Estos resultados
+son puntajes retrospectivos y avisos pendientes de cotejo, no errores confirmados
+ni una evaluación predictiva con 2025 reservado íntegramente fuera de entrenamiento.
+El filtro anual consulta los resultados de una versión; no reentrena por año.
+
+La falta de datos digitales de 2026 no impide ejecutar ni consultar ese detector.
+El modelo operativo digital es una capacidad distinta, sin entrenamiento por datos
+insuficientes; no debe confundirse con la disponibilidad del modelo histórico.
+La evaluación humana pendiente se refiere a medir los aciertos del detector, no
+a implementar Isolation Forest. El detalle de las consultas está en
+outputs/auditoria_cierre_funcional_20261031/isolation_por_articulo_y_2025.json.
+
 ## Auditoría funcional y retiro autorizado del registro de ensayo
 
 Comprobación posterior del 31/10/2026 sobre el código 79e1dc7. El núcleo funcional
