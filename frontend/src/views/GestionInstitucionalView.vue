@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
+import { useRoute } from 'vue-router'
+import { GESTION_DOCUMENTAL_HASTA } from '@/config/alcance'
 
 interface Saldo {
   articulo_id: number
@@ -80,7 +82,9 @@ interface Informe {
 }
 const auth = useAuthStore()
 const admin = computed(() => auth.rol === 'Administrador')
-const gestion = ref(new Date().getFullYear())
+const gestionEnlace = Number(useRoute().query.gestion)
+const gestion = ref(Number.isInteger(gestionEnlace) && gestionEnlace >= 1900 && gestionEnlace <= 9998
+  ? gestionEnlace : GESTION_DOCUMENTAL_HASTA)
 const informe = ref<Informe | null>(null),
   previa = ref<Previa | null>(null)
 const cierres = ref<Cierre[]>([]),
@@ -251,6 +255,7 @@ onMounted(cargar)
         <router-link to="/">Volver al inicio</router-link>
         <h1>Informe institucional y cierres anuales</h1>
         <p>Saldos actuales, registros de cada gestión y balances conservados para auditoría.</p>
+        <p>El proyecto utiliza documentos hasta {{ GESTION_DOCUMENTAL_HASTA }}. Los saldos actuales y las fechas de registro digital se presentan por separado.</p>
       </div>
     </header>
     <form class="filtros" @submit.prevent="consultar">

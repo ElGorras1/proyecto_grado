@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import EvaluacionAnalitica from '@/components/EvaluacionAnalitica.vue'
 import ReglasHistoricas from '@/components/ReglasHistoricas.vue'
 import type { DiagnosticoAnalitica } from '@/services/analitica'
+import { GESTION_DOCUMENTAL_HASTA } from '@/config/alcance'
 
 interface Perfil {
   total: number
@@ -70,6 +71,7 @@ interface Fila {
 }
 interface Resultado {
   id: number
+  articulo_id: number
   nodo: string | null
   movimiento_id: number
   score: number
@@ -134,7 +136,7 @@ const filtrosPendientes = computed(
 )
 const porcentaje = ref(5)
 const modo = ref<'RETROSPECTIVO' | 'TEMPORAL' | 'POR_ARTICULO'>('POR_ARTICULO')
-const anioTemporal = ref(new Date().getFullYear() - 1)
+const anioTemporal = ref(GESTION_DOCUMENTAL_HASTA)
 const planTemporal = ref<{
   suficiente: boolean
   particiones: Record<string, number>
@@ -147,6 +149,7 @@ const detalle = ref<Detalle | null>(null)
 const revision = ref({ estado: 'EN_REVISION', etiqueta: 'NO_CONCLUYENTE', motivo: '' })
 const error = ref('')
 const cargando = ref(false)
+const exportando = ref(false)
 const guardando = ref(false)
 const iniciando = ref(false)
 const fotoError = ref(false)
@@ -281,6 +284,32 @@ async function verGestion(anio: string) {
 }
 function elegirArticulo() {
   articulo.value = ''
+}
+async function descargarResultados() {
+  if (exportando.value || cargando.value || filtrosPendientes.value || modelo.value?.estado !== 'COMPLETADO' || modelo.value.id !== seleccionado.value) return
+  const id = modelo.value.id
+  const filtros = { ...aplicados.value }
+  exportando.value = true
+  error.value = ''
+  try {
+    const { data } = await api.get('/analitica/resultados.csv', {
+      params: {
+        modelo_id: id, gestion: filtros.gestion || undefined, articulo: filtros.articulo || undefined,
+        articulo_id: filtros.articulo_id || undefined, nodo: filtros.nodo || undefined,
+        estado: filtros.estado || undefined, seleccion: filtros.seleccion,
+      }, responseType: 'blob',
+    })
+    const url = URL.createObjectURL(new Blob([data], { type: 'text/csv;charset=utf-8' }))
+    try {
+      const enlace = document.createElement('a')
+      enlace.href = url
+      enlace.download = `auditoria_historica_${filtros.gestion || 'todas'}.csv`
+      document.body.appendChild(enlace)
+      enlace.click()
+      enlace.remove()
+    } finally { setTimeout(() => URL.revokeObjectURL(url), 1000) }
+  } catch { error.value = 'No se pudo descargar la auditoría. Revisa la conexión y vuelve a intentarlo.' }
+  finally { exportando.value = false }
 }
 async function limpiarFiltros() {
   await revisarSeleccion('todos')
@@ -690,6 +719,8 @@ onUnmounted(() => {
         <button type="button" :disabled="cargando" @click="limpiarFiltros">Limpiar filtros</button>
       </form>
       <p v-if="articuloElegido && !articuloElegido.elegibles" role="status">Este artículo conserva documentos, pero no tiene movimientos elegibles en esta versión. Revisa su procedencia y exclusiones en HIL; la ausencia de puntuación no confirma que sus datos sean correctos.</p>
+      <button :disabled="exportando || cargando || filtrosPendientes || modelo?.estado !== 'COMPLETADO' || modelo?.id !== seleccionado" @click="descargarResultados">{{ exportando ? 'Preparando descarga…' : 'Descargar auditoría filtrada CSV' }}</button>
+      <p>La descarga incluye todos los resultados de los filtros aplicados, con la versión y el umbral del modelo. Conserva los valores del corte; los avisos estadísticos requieren cotejo documental.</p>
       <p>
         La gestión corresponde a la fecha del documento. Esta lista muestra los movimientos
         evaluados por la versión seleccionada.
@@ -775,9 +806,10 @@ onUnmounted(() => {
             <li v-for="texto in detalle.contexto.indicadores" :key="texto">{{ texto }}</li>
           </ul>
           <p>Los indicadores dan contexto; no son una explicación causal del modelo.</p>
-          <router-link to="/kardex-digital">
-            Abrir Kárdex para revisar calidad documental
+          <router-link :to="{ path: '/kardex-digital', query: { articulo_id: detalle.articulo_id, tab: 'hil' } }">
+            Revisar HIL de este artículo
           </router-link>
+          · <router-link :to="{ path: '/kardex-digital', query: { articulo_id: detalle.articulo_id, tab: 'grafo' } }">Ver trazabilidad de este artículo</router-link>
         </div>
       </div>
       <h3>Contexto en orden físico del corte</h3>

@@ -1,5 +1,58 @@
 # Estado, pruebas y pendientes
 
+## Situación vigente y tareas de cierre — 31/10/2026
+
+El núcleo funcional está implementado y verificado técnicamente. No se acredita
+todavía aceptación institucional ni exactitud supervisada del detector.
+
+| Tarea técnica cerrada | Resultado |
+|---|---|
+| Referencia documental | Reportes abre el archivo escaneado en su última gestión disponible hasta 2025. El informe institucional comienza en 2025 y respeta enlaces a otro año; otras gestiones y operaciones digitales se consultan expresamente. No se alteran fechas ni reloj. |
+| Cobertura y evaluación temporal | Los formularios proponen años del archivo o la referencia 2025, sin derivarlos del calendario actual. Seleccionar otro artículo limpia los datos del formulario de periodos. |
+| Isolation Forest | Versión del 20/10 conservada: 8.367 puntuaciones y 359 avisos en 21 gestiones, con todos sus elegibles puntuados. No se ha reentrenado. |
+| Descarga de auditoría | CSV autenticado de todos los resultados filtrados, sin límite de página; comparte filtros y orden con la lista. Incluye modelo, huella del corte, umbral, puntuación, partición, revisión y procedencia. Neutraliza fórmulas y conserva los valores originales. |
+| Recorrido de revisión | Desde un hallazgo se abre HIL o trazabilidad del artículo exacto. El archivo admite enlaces a historial, HIL, grafo y cobertura. |
+| Áreas | Las 11 ubicaciones conocidas están activas por indicación del titular. Esto no asigna existencias ni confirma alias documentales. |
+| Comprobaciones | 418 aprobadas y cuatro omitidas en SQLite por requerir PostgreSQL; 211 aprobadas en PostgreSQL aislado, sin omisiones; 131 de interfaz. Tipos, análisis estático y compilación correctos. No sumar suites solapadas. |
+
+El recorrido del navegador consultó la aplicación real con una sesión técnica
+temporal de Auditor: 29 respuestas, descarga, informes, enlaces HIL/grafo y ancho
+móvil, sin errores de JavaScript/API ni escrituras. El piloto preservó tablas,
+secuencias y los 927 archivos privados de la instalación. Es evidencia técnica,
+no un ensayo con participantes. Expediente: outputs/cierre_funcional_final_20261031/;
+piloto: backend/backups/piloto_20261031T193552820604Z/.
+
+**Dos cortes que no deben confundirse:** el modelo congelado cuenta 216 documentos
+de 2025, 188 puntuados y cuatro avisos. El reporte vigente cuenta 215 movimientos
+asignables a ese año: la fila 195 conserva después una fecha ESTIMADA_HIL y se
+consulta sin gestión confirmada. El perfil vigente conserva los mismos 188 elegibles.
+El CSV del modelo contiene esas 188 puntuaciones y cuatro avisos, sin duplicados;
+no sustituye los valores del corte por correcciones posteriores.
+
+### Pendientes para la entrega institucional
+
+| Prioridad | Pendiente real | Dónde cerrarlo y evidencia necesaria |
+|---|---|---|
+| 1 | Aclarar la salida digital 12277 y el saldo de seis unidades de «Testimonios de la literatura boliviana, vol. 2». | La salida de dos unidades del 14/10/2026 figura como Obsequios y Donaciones, sin referencia documental. Su condición de ensayo o hecho real está pendiente de respuesta del titular. Conservar apertura y operación; si son reales, verificar conteo, acta, ubicación y responsable antes de cualquier ajuste. |
+| 2 | Cotejar las fuentes y equivalencias del archivo. | Cobertura documental: 397 fuentes sin confirmación y 38 bases bloqueadas; Áreas y catálogos: 41 alias activos sin confirmar. Revisar fotografías y respaldo; no aprobar en bloque. |
+| 3 | Medir los aciertos del detector. | Validación del proyecto: protocolo y etiquetas independientes NORMAL/ANOMALO/INDETERMINADO, cotejadas con documentos. Actualmente cero estudios y etiquetas institucionales; no hay precisión, recall ni F1 acreditados. |
+| 4 | Evaluar grafo, tiempos y aceptación. | Aplicar los instrumentos del protocolo con tareas y participantes reales. Las pruebas automáticas no sustituyen esas mediciones. |
+| 5 | Preparar la entrega de producción. | Definir servidor y acceso institucional, HTTPS, carga y recuperación en destino. Docker permanece pospuesto por el titular. |
+
+La analítica de operaciones digitales continúa separada: un evento elegible no
+permite entrenarla. Se presenta como capacidad futura condicionada a datos reales;
+no impide consultar el Isolation Forest histórico ni requiere inventar operaciones
+de 2026 para este proyecto. No se han modificado registros institucionales durante
+este cierre técnico. La base conserva 398 artículos, 11.909 movimientos y una apertura.
+
+La verificación GitHub de la entrega anterior `6a03f22` terminó correctamente en
+interfaz, servidor Python 3.11/3.12 y PostgreSQL:
+[ejecución 41214169809](https://github.com/ElGorras1/proyecto_grado/actions/runs/41214169809).
+La ejecución de producción quedó omitida conforme al aplazamiento de Docker.
+
+Los apartados siguientes conservan cortes anteriores; sus recuentos no sustituyen
+la situación vigente de este encabezado.
+
 ## Consulta por gestión y áreas habilitadas
 
 Actualización del 31/10/2026. Isolation Forest conserva su modelo y puntuaciones;

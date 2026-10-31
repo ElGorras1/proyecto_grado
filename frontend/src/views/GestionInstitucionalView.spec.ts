@@ -1,16 +1,18 @@
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import GestionInstitucionalView from './GestionInstitucionalView.vue'
-const { get, post, auth } = vi.hoisted(() => ({
+const { get, post, auth, ruta } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   auth: { rol: 'Administrador' },
+  ruta: {} as Record<string, string>,
 }))
+vi.mock('vue-router', async importOriginal => ({ ...await importOriginal<typeof import('vue-router')>(), useRoute: () => ({ query: ruta }) }))
 vi.mock('@/services/api', () => ({ default: { get, post } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 let permitido = true
 const informe = {
-  gestion: new Date().getFullYear(),
+  gestion: 2025,
   generado_en: '2026-10-08T12:00:00Z',
   limites: 'Saldo documental provisional',
   inventario_actual: [],
@@ -23,6 +25,7 @@ const informe = {
 beforeEach(() => {
   auth.rol = 'Administrador'
   permitido = true
+  Object.keys(ruta).forEach(k => delete ruta[k])
   get.mockReset()
   post.mockReset()
   get.mockImplementation((url: string) =>
@@ -30,7 +33,7 @@ beforeEach(() => {
       data: url.endsWith('vista-previa')
         ? {
             snapshot: {
-              gestion: new Date().getFullYear(),
+              gestion: 2025,
               total: 100,
               articulos: [],
               alcance: 'Solo digital',
@@ -50,7 +53,15 @@ function montar() {
   return mount(GestionInstitucionalView, { global: { stubs: { RouterLink: RouterLinkStub } } })
 }
 describe('Gestión institucional', () => {
+  it('consulta inicialmente la referencia documental 2025 sin registrar cierres', async () => {
+    const w = montar()
+    await flushPromises()
+    expect(get).toHaveBeenCalledWith('/reportes/institucional', { params: { gestion: 2025 } })
+    expect(post).not.toHaveBeenCalled()
+    w.unmount()
+  })
   it('mantiene el informe de la gestión consultada hasta confirmar otro año', async () => {
+    ruta.gestion = '2026'
     const original = get.getMockImplementation()!
     get.mockImplementation((url: string, opciones: { params: Record<string, string | number> }) =>
       url === '/reportes/institucional'

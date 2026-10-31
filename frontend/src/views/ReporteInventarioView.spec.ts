@@ -91,7 +91,7 @@ describe('Reportes por gestión', () => {
     await flushPromises()
     expect(obtener).toHaveBeenLastCalledWith('/reportes/inventario', {
       params: {
-        gestion: 2026,
+        gestion: 2025,
         mes: 2,
         articulo: 'LIB-001',
         origen: 'historico',
@@ -122,4 +122,31 @@ it('respeta la gestión y origen del enlace institucional aunque existan años m
   })
   expect((wrapper.get('form select').element as HTMLSelectElement).value).toBe('2025')
   wrapper.unmount()
+})
+
+it('abre el archivo hasta 2025 y permite consultar operaciones digitales posteriores expresamente', async () => {
+  obtener.mockImplementation(async (url) => url === '/reportes/inventario/opciones'
+    ? { data: { gestiones: [2026, 2025, 2024], gestiones_historicas: [2024], nodos: [] } } as never
+    : { data: datos } as never)
+  const w = mount(ReporteInventarioView, { global: { stubs: ['router-link'] } })
+  await flushPromises()
+  expect(obtener).toHaveBeenCalledWith('/reportes/inventario', expect.objectContaining({ params: expect.objectContaining({ gestion: 2024, origen: 'historico' }) }))
+  await w.get('[aria-label="Gestión"]').setValue('2026')
+  await w.get('[aria-label="Origen"]').setValue('moderno')
+  expect(w.text()).toContain('Hay filtros sin aplicar')
+  await w.get('form').trigger('submit'); await flushPromises()
+  expect(obtener).toHaveBeenLastCalledWith('/reportes/inventario', expect.objectContaining({ params: expect.objectContaining({ gestion: 2026, origen: 'moderno' }) }))
+  w.unmount()
+})
+
+it('no asigna un año digital al archivo sin fechas históricas completas', async () => {
+  obtener.mockImplementation(async (url) => url === '/reportes/inventario/opciones'
+    ? { data: { gestiones: [2026], gestiones_historicas: [], nodos: [] } } as never
+    : { data: { ...datos, gestion: null } } as never)
+  const w = mount(ReporteInventarioView, { global: { stubs: ['router-link'] } })
+  await flushPromises()
+  const params = obtener.mock.calls.find(c => c[0] === '/reportes/inventario')![1]!.params
+  expect(params).toMatchObject({ origen: 'historico' })
+  expect(params).not.toHaveProperty('gestion')
+  w.unmount()
 })

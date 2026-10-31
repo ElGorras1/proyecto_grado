@@ -82,6 +82,7 @@ def test_opciones_y_csv_respetan_filtros_y_evitan_formulas(client, db_session):
     cabecera = _cabecera(usuario)
     opciones = client.get("/api/v1/reportes/inventario/opciones", headers=cabecera).json()
     assert opciones["gestiones"] == [2026, 2025]
+    assert opciones["gestiones_historicas"] == [2026, 2025]
     assert "Ventas" in opciones["nodos"]
     assert client.get("/api/v1/reportes/inventario.csv", params={"gestion": 2026}).status_code == 401
     respuesta = client.get("/api/v1/reportes/inventario.csv", headers=cabecera,

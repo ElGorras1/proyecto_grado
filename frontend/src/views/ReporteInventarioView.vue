@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
+import { GESTION_DOCUMENTAL_HASTA, ultimaGestionDocumental } from '@/config/alcance'
 
 type Origen = 'todos' | 'historico' | 'moderno'
 type Direccion = 'todas' | 'ingreso' | 'salida'
@@ -74,17 +75,17 @@ const nombresMes = [
 const route = useRoute()
 const gestionEnlace = Number(route.query.gestion)
 const gestionSolicitada =
-  Number.isInteger(gestionEnlace) && gestionEnlace >= 1900 && gestionEnlace <= 9998
+  Number.isInteger(gestionEnlace) && gestionEnlace >= 1900 && gestionEnlace <= 2100
     ? gestionEnlace
     : null
 const origenSolicitado =
   route.query.origen === 'historico' || route.query.origen === 'moderno'
     ? route.query.origen
-    : 'todos'
+    : route.query.origen === 'todos' ? 'todos' : 'historico'
 const gestiones = ref<number[]>([])
 const nodos = ref<string[]>([])
 const filtros = ref<Filtros>({
-  gestion: gestionSolicitada ?? new Date().getFullYear(),
+  gestion: gestionSolicitada ?? '',
   mes: '',
   articulo: '',
   origen: origenSolicitado,
@@ -104,6 +105,8 @@ const maximoMensual = computed(() =>
 const totalPaginas = computed(() =>
   reporte.value ? Math.ceil(reporte.value.resumen.movimientos / reporte.value.limite) : 0,
 )
+const filtrosPendientes = computed(() => aplicados.value !== null &&
+  JSON.stringify(parametros(filtros.value)) !== JSON.stringify(parametros(aplicados.value)))
 
 function parametros(f: Filtros): Record<string, string | number> {
   const p: Record<string, string | number> = {
@@ -162,7 +165,7 @@ async function descargarCsv() {
 
 onMounted(async () => {
   try {
-    const { data } = await api.get<{ gestiones: number[]; nodos: string[] }>(
+    const { data } = await api.get<{ gestiones: number[]; gestiones_historicas?: number[]; nodos: string[] }>(
       '/reportes/inventario/opciones',
     )
     gestiones.value = data.gestiones
@@ -170,7 +173,7 @@ onMounted(async () => {
     if (gestionSolicitada !== null) {
       if (!gestiones.value.includes(gestionSolicitada))
         gestiones.value = [...gestiones.value, gestionSolicitada].sort((a, b) => b - a)
-    } else if (gestiones.value.length) filtros.value.gestion = gestiones.value[0]
+    } else filtros.value.gestion = ultimaGestionDocumental(data.gestiones_historicas ?? gestiones.value)
     await cargarReporte(1, true)
   } catch {
     error.value = 'No se pudieron cargar las gestiones disponibles.'
@@ -189,8 +192,9 @@ const numero = (n: number) => new Intl.NumberFormat('es-BO').format(n)
         <router-link to="/" class="volver">← Panel principal</router-link>
         <h1>Reportes de inventario por gestión</h1>
         <p>Consulta los movimientos registrados en cada año y descarga el detalle filtrado.</p>
+        <p>Referencia documental del proyecto: hasta {{ GESTION_DOCUMENTAL_HASTA }}. Otras gestiones y operaciones digitales se consultan seleccionándolas expresamente.</p>
       </div>
-      <button class="exportar" :disabled="!reporte || exportando" @click="descargarCsv">
+      <button class="exportar" :disabled="!reporte || cargando || exportando" @click="descargarCsv">
         {{ exportando ? 'Preparando CSV…' : '↓ Descargar CSV' }}
       </button>
       <router-link
@@ -198,6 +202,8 @@ const numero = (n: number) => new Intl.NumberFormat('es-BO').format(n)
         >Analizar esta gestión</router-link
       >
     </header>
+
+    <p v-if="filtrosPendientes" role="status">Hay filtros sin aplicar. La tabla y la descarga conservan la última consulta; pulsa «Aplicar filtros» para actualizarlas.</p>
 
     <form class="filtros" @submit.prevent="cargarReporte(1, true)">
       <label
@@ -270,6 +276,7 @@ const numero = (n: number) => new Intl.NumberFormat('es-BO').format(n)
     <p v-if="error" role="alert" class="error">{{ error }}</p>
 
     <template v-if="reporte">
+      <p role="status">Consulta aplicada: {{ aplicados?.gestion || 'Sin gestión confirmada' }} · {{ aplicados?.origen === 'historico' ? 'Kárdex escaneado' : aplicados?.origen === 'moderno' ? 'Operaciones modernas' : 'Histórico y moderno' }}.</p>
       <section class="metricas" aria-label="Resumen del reporte">
         <div>
           <span>Movimientos</span><strong>{{ numero(reporte.resumen.movimientos) }}</strong

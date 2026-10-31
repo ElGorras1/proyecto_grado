@@ -17,6 +17,12 @@ El núcleo está implementado y comprobado técnicamente. La aceptación institu
 los conteos reales, el dataset oficial, las métricas humanas y la entrega de producción
 siguen pendientes; sus condiciones están reunidas en el documento de estado.
 
+El archivo del proyecto llega hasta 2025. Los informes utilizan esa referencia al
+abrir; Isolation Forest permite consultar por gestión y artículo y descargar toda
+la auditoría filtrada con su versión y umbral. Un hallazgo enlaza directamente al
+HIL y al grafo del artículo. Las 11 áreas conocidas están habilitadas; las
+ubicaciones físicas, fuentes documentales y etiquetas humanas requieren cotejo.
+
 ## Inicio rápido
 
 Con PostgreSQL y dependencias preparados, ejecutar desde la raíz:

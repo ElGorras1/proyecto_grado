@@ -63,6 +63,66 @@ function montar() {
   return mount(AnaliticaView, { global: { stubs: { RouterLink: RouterLinkStub, ReglasHistoricas: true } } })
 }
 describe('Auditoría histórica', () => {
+  it('enlaza HIL y grafo conservando la identidad del artículo del hallazgo', async () => {
+    hayModelo = true
+    const original = get.getMockImplementation()!
+    const fila = { id: 8, articulo_id: 7, movimiento_id: 99, score: 0.7, alerta: true,
+      particion: 'evaluacion', estado_revision: 'PENDIENTE', revision_numero: 0,
+      snapshot: { articulo: 'Artículo del corte', fecha: '2021-01-01' },
+      contexto: { mediana: 1, referencias: 10, indicadores: [] }, vecinos: [], revisiones: [] }
+    get.mockImplementation((url: string) => url.endsWith('/resultados/8')
+      ? Promise.resolve({ data: fila }) : url.endsWith('/resultados')
+        ? Promise.resolve({ data: { total: 1, filas: [fila] } }) : original(url))
+    const w = montar()
+    await flushPromises()
+    await w.findAll('button').find(b => b.text() === 'Ver evidencia')!.trigger('click'); await flushPromises()
+    const enlaces = w.findAllComponents(RouterLinkStub).filter(l => l.text().includes('este artículo'))
+    expect(enlaces.map(l => l.props('to'))).toEqual([
+      { path: '/kardex-digital', query: { articulo_id: 7, tab: 'hil' } },
+      { path: '/kardex-digital', query: { articulo_id: 7, tab: 'grafo' } },
+    ])
+    expect(post).not.toHaveBeenCalled()
+    w.unmount()
+  })
+  it('descarga todos los resultados de la consulta aplicada y bloquea filtros sin aplicar', async () => {
+    hayModelo = true
+    const original = get.getMockImplementation()!
+    get.mockImplementation((url: string) => url.endsWith('.csv')
+      ? Promise.resolve({ data: new Blob(['Modelo;Movimiento ID\nmodelo-1;8']) }) : original(url))
+    const createUrl = vi.fn(() => 'blob:auditoria')
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createUrl })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const w = montar()
+    try {
+      await flushPromises()
+      const descargar = () => w.findAll('button').find(b => b.text() === 'Descargar auditoría filtrada CSV')!
+      await w.get('[aria-label="Artículo del corte"]').setValue('1')
+      expect(descargar().attributes('disabled')).toBeDefined()
+      await w.get('form.filtros').trigger('submit'); await flushPromises()
+      await descargar().trigger('click'); await flushPromises()
+      expect(get).toHaveBeenCalledWith('/analitica/resultados.csv', {
+        params: { modelo_id: 'modelo-1', gestion: '2021', articulo: undefined, articulo_id: '1',
+          nodo: undefined, estado: undefined, seleccion: 'todos' }, responseType: 'blob',
+      })
+      expect(click).toHaveBeenCalledTimes(1)
+      expect(createUrl).toHaveBeenCalledTimes(1)
+      expect(post).not.toHaveBeenCalled()
+    } finally { w.unmount(); click.mockRestore() }
+  })
+
+  it('muestra un mensaje y permite reintentar si la descarga falla', async () => {
+    hayModelo = true
+    const original = get.getMockImplementation()!
+    get.mockImplementation((url: string) => url.endsWith('.csv') ? Promise.reject(new Error('sin conexión')) : original(url))
+    const w = montar()
+    await flushPromises()
+    await w.findAll('button').find(b => b.text() === 'Descargar auditoría filtrada CSV')!.trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('No se pudo descargar la auditoría')
+    expect(w.findAll('button').find(b => b.text() === 'Descargar auditoría filtrada CSV')!.attributes('disabled')).toBeUndefined()
+    w.unmount()
+  })
   it('conserva la consulta anterior mientras se actualiza el servicio del resumen', async () => {
     hayModelo = true
     const original = get.getMockImplementation()!

@@ -27,18 +27,23 @@ def _pendiente_hil():
 def _consulta(db, gestion, mes, articulo, origen, direccion, nodo, revision):
     if gestion is None and mes is not None:
         raise HTTPException(422, "Selecciona una gestión confirmada antes de filtrar por mes")
-    consulta = db.query(MovimientoKardex, Activo).join(
-        Activo, Activo.id == MovimientoKardex.articulo_id
-    ).filter(
-        MovimientoKardex.estado == "ACTIVO",
+    consulta = (
+        db.query(MovimientoKardex, Activo)
+        .join(Activo, Activo.id == MovimientoKardex.articulo_id)
+        .filter(
+            MovimientoKardex.estado == "ACTIVO",
+        )
     )
     if gestion is None:
         consulta = consulta.filter(~fecha_asignable_sql())
     else:
         inicio = date(gestion, mes or 1, 1)
         fin = date(gestion + 1, 1, 1) if not mes or mes == 12 else date(gestion, mes + 1, 1)
-        consulta = consulta.filter(fecha_asignable_sql(), MovimientoKardex.fecha_movimiento >= inicio,
-                                   MovimientoKardex.fecha_movimiento < fin)
+        consulta = consulta.filter(
+            fecha_asignable_sql(),
+            MovimientoKardex.fecha_movimiento >= inicio,
+            MovimientoKardex.fecha_movimiento < fin,
+        )
     if articulo:
         termino = f"%{articulo.strip()}%"
         consulta = consulta.filter(or_(Activo.nombre.ilike(termino), Activo.codigo.ilike(termino)))
@@ -97,14 +102,26 @@ def opciones_reporte(
     _usuario=Depends(get_current_user),
 ):
     activos = MovimientoKardex.estado == "ACTIVO"
-    fechas = db.query(MovimientoKardex.fecha_movimiento).filter(activos, fecha_asignable_sql()).distinct().all()
-    nodos = db.query(distinct(MovimientoKardex.nodo_grafo)).filter(
-        activos, MovimientoKardex.nodo_grafo.isnot(None)
-    ).all()
+    fechas = (
+        db.query(MovimientoKardex.fecha_movimiento, MovimientoKardex.lote_id.isnot(None))
+        .filter(activos, fecha_asignable_sql())
+        .distinct()
+        .all()
+    )
+    nodos = (
+        db.query(distinct(MovimientoKardex.nodo_grafo))
+        .filter(activos, MovimientoKardex.nodo_grafo.isnot(None))
+        .all()
+    )
     return {
-        "gestiones": sorted({fecha.year for (fecha,) in fechas if fecha}, reverse=True),
+        "gestiones": sorted({fecha.year for fecha, _ in fechas if fecha}, reverse=True),
+        "gestiones_historicas": sorted(
+            {fecha.year for fecha, historico in fechas if fecha and historico}, reverse=True
+        ),
         "nodos": sorted(n[0] for n in nodos if n[0]),
-        "sin_gestion_confirmada": db.query(MovimientoKardex).filter(activos, ~fecha_asignable_sql()).count(),
+        "sin_gestion_confirmada": db.query(MovimientoKardex)
+        .filter(activos, ~fecha_asignable_sql())
+        .count(),
     }
 
 
@@ -141,16 +158,27 @@ def reporte_inventario(
         func.coalesce(func.sum(case((subconsulta.c.lote_id.isnot(None), 1), else_=0)), 0),
         func.coalesce(func.sum(case((subconsulta.c.lote_id.is_(None), 1), else_=0)), 0),
     ).one()
-    por_mes = db.query(
-        func.extract("month", subconsulta.c.fecha),
-        func.count(subconsulta.c.id),
-        func.coalesce(func.sum(subconsulta.c.ingresos), 0),
-        func.coalesce(func.sum(subconsulta.c.salidas), 0),
-    ).group_by(func.extract("month", subconsulta.c.fecha)).all()
-    meses = {int(m): (int(c), int(i), int(s)) for m, c, i, s in por_mes if m is not None and gestion is not None}
-    filas = consulta.order_by(
-        MovimientoKardex.fecha_movimiento.asc(), MovimientoKardex.id.asc()
-    ).offset((pagina - 1) * limite).limit(limite).all()
+    por_mes = (
+        db.query(
+            func.extract("month", subconsulta.c.fecha),
+            func.count(subconsulta.c.id),
+            func.coalesce(func.sum(subconsulta.c.ingresos), 0),
+            func.coalesce(func.sum(subconsulta.c.salidas), 0),
+        )
+        .group_by(func.extract("month", subconsulta.c.fecha))
+        .all()
+    )
+    meses = {
+        int(m): (int(c), int(i), int(s))
+        for m, c, i, s in por_mes
+        if m is not None and gestion is not None
+    }
+    filas = (
+        consulta.order_by(MovimientoKardex.fecha_movimiento.asc(), MovimientoKardex.id.asc())
+        .offset((pagina - 1) * limite)
+        .limit(limite)
+        .all()
+    )
     return {
         "gestion": gestion,
         "resumen": {
@@ -163,9 +191,12 @@ def reporte_inventario(
             "modernos": int(modernos),
         },
         "mensual": [
-            {"mes": n, "movimientos": meses.get(n, (0, 0, 0))[0],
-             "ingresos": meses.get(n, (0, 0, 0))[1],
-             "salidas": meses.get(n, (0, 0, 0))[2]}
+            {
+                "mes": n,
+                "movimientos": meses.get(n, (0, 0, 0))[0],
+                "ingresos": meses.get(n, (0, 0, 0))[1],
+                "salidas": meses.get(n, (0, 0, 0))[2],
+            }
             for n in range(1, 13)
         ],
         "pagina": pagina,
@@ -200,30 +231,84 @@ def exportar_inventario(
         yield "\ufeff"
         buffer = io.StringIO()
         escritor = csv.writer(buffer, delimiter=";")
-        escritor.writerow([
-            "ID", "Fecha para consulta", "Fecha original", "Estado fecha", "Código", "Artículo", "Origen", "Lote",
-            "Página", "Fila", "Detalle", "Referencia", "Área original", "Nodo",
-            "Tipo de operación", "Ingresos", "Salidas", "Pendiente HIL",
-            "Origen fecha", "Origen saldo", "Saldo documental cotejado", "Saldo vigente", "Saldo esperado", "Hallazgos conservados",
-            "Fecha escrita", "Precisión fecha", "Gestión confirmada",
-        ])
+        escritor.writerow(
+            [
+                "ID",
+                "Fecha para consulta",
+                "Fecha original",
+                "Estado fecha",
+                "Código",
+                "Artículo",
+                "Origen",
+                "Lote",
+                "Página",
+                "Fila",
+                "Detalle",
+                "Referencia",
+                "Área original",
+                "Nodo",
+                "Tipo de operación",
+                "Ingresos",
+                "Salidas",
+                "Pendiente HIL",
+                "Origen fecha",
+                "Origen saldo",
+                "Saldo documental cotejado",
+                "Saldo vigente",
+                "Saldo esperado",
+                "Hallazgos conservados",
+                "Fecha escrita",
+                "Precisión fecha",
+                "Gestión confirmada",
+            ]
+        )
         yield buffer.getvalue()
         buffer.seek(0)
         buffer.truncate(0)
         for mov, activo in consulta.order_by(MovimientoKardex.id).yield_per(500):
             fila = _fila(mov, activo)
-            escritor.writerow([_celda_csv(fila[clave]) for clave in (
-                "id", "fecha", "fecha_original", "fecha_estado", "codigo", "articulo", "origen", "lote_id",
-                "pagina", "orden_fila", "detalle", "referencia", "area_original", "nodo",
-                "tipo_operacion", "ingresos", "salidas", "pendiente_hil",
-                "origen_fecha", "origen_saldo", "saldo_documental", "saldo_vigente", "saldo_esperado", "hallazgos_documentales",
-                "fecha_documental_texto", "fecha_precision", "gestion_confirmada",
-            )])
+            escritor.writerow(
+                [
+                    _celda_csv(fila[clave])
+                    for clave in (
+                        "id",
+                        "fecha",
+                        "fecha_original",
+                        "fecha_estado",
+                        "codigo",
+                        "articulo",
+                        "origen",
+                        "lote_id",
+                        "pagina",
+                        "orden_fila",
+                        "detalle",
+                        "referencia",
+                        "area_original",
+                        "nodo",
+                        "tipo_operacion",
+                        "ingresos",
+                        "salidas",
+                        "pendiente_hil",
+                        "origen_fecha",
+                        "origen_saldo",
+                        "saldo_documental",
+                        "saldo_vigente",
+                        "saldo_esperado",
+                        "hallazgos_documentales",
+                        "fecha_documental_texto",
+                        "fecha_precision",
+                        "gestion_confirmada",
+                    )
+                ]
+            )
             yield buffer.getvalue()
             buffer.seek(0)
             buffer.truncate(0)
 
     return StreamingResponse(
-        generar(), media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="reporte_inventario_{gestion or "sin_gestion_confirmada"}.csv"'},
+        generar(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="reporte_inventario_{gestion or "sin_gestion_confirmada"}.csv"'
+        },
     )

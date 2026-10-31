@@ -1,13 +1,14 @@
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import KardexContinuoView from './KardexContinuoView.vue'
-const { get, post, put, auth } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), auth: { rol: 'Administrador' } }))
+const { get, post, put, auth, ruta } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), auth: { rol: 'Administrador' }, ruta: {} as Record<string, string> }))
 vi.mock('@/services/api', () => ({ default: { get, post, put, defaults: { baseURL: 'http://localhost:8000/api/v1' } } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: ruta }) }))
 const filas = [1, 2].map(tanda => ({ id: tanda, lote_id: tanda, tanda, fecha_movimiento: '2025-01-01', detalle: `Documento tanda ${tanda}`, ingresos: 5, salidas: null, saldo_registrado: 5, tiene_error_saldo: true, tipos_alerta: ['saldo'], numero_pagina: 1 }))
 beforeEach(() => {
  auth.rol = 'Administrador'
+ Object.keys(ruta).forEach(k => delete ruta[k])
  get.mockReset(); post.mockReset()
  get.mockImplementation((url: string) => {
    if(url === '/kardex/tandas') return Promise.resolve({ data: { tanda_nuevas_cargas: 2, tandas: [1, 2].map(id => ({ id, nombre: `Tanda ${id}`, movimientos: 1, escaneos: 1 })) } })
@@ -23,6 +24,16 @@ async function montar() {
  return w
 }
 describe('Archivo por tandas', () => {
+ it.each([['grafo', 'Trazabilidad'], ['hil', 'Auditoría HIL'], ['invalida', 'Historial Continuo']])('abre el artículo enlazado en la pestaña %s', async (tab, texto) => {
+   ruta.articulo_id = '1'; ruta.tab = tab
+   const w = mount(KardexContinuoView, { global: { stubs: { RouterLink: RouterLinkStub, TrazabilidadArticulo: true, RevisionHil: true } } })
+   await flushPromises()
+   expect(w.get('.tabs .active').text()).toContain(texto)
+   expect(w.text()).toContain('Libro')
+   if (tab === 'grafo') expect(w.getComponent({ name: 'TrazabilidadArticulo' }).props('articuloId')).toBe(1)
+   expect(post).not.toHaveBeenCalled()
+   w.unmount()
+ })
  it('exige fila y cotejo explícito, y envía la versión de evidencia leída', async () => {
    const anterior = get.getMockImplementation()!
    get.mockImplementation((url: string) => {
@@ -31,7 +42,7 @@ describe('Archivo por tandas', () => {
        fuente_cierre: { estado: 'PROPUESTA', seleccion: null, propuesta: null },
        candidatos_cierre: [{ movimiento_id: 10, lote_id: 2, pagina: 1, orden_pagina: 1,
          fila: 3, fecha_ocr: '2024-12-31', saldo_documental: 8, ruta_imagen_respaldo: 'storage/hoja.png' }],
-       evidencia_disponible: { lotes: [], gestiones_con_filas: [], paginas_con_filas: 1, movimientos: 1 },
+       evidencia_disponible: { lotes: [], gestiones_con_filas: [{ gestion: 2024, movimientos: 1 }, { gestion: 2026, movimientos: 1 }], paginas_con_filas: 1, movimientos: 1 },
        continuidad: { orden: 'lote, hoja y fila', cierre_disponible: null, interrupciones_entre_lotes: [] },
        revision: { estado: 'SIN_CONFIRMAR', referencia: null, observacion: '', vigente: false, revisado_en: null },
        tramos: [],
@@ -42,6 +53,8 @@ describe('Archivo por tandas', () => {
    const w = await montar()
    await w.findAll('.tabs .tab-btn').find(b => b.text().includes('Cobertura'))!.trigger('click')
    await flushPromises()
+   const desde = w.findAll('.form-group').find(g => g.get('label').text() === 'Gestión desde')!
+   expect(desde.get<HTMLInputElement>('input').element.value).toBe('2024')
    const estado = w.findAll('select').find(s => s.find('option[value="CIERRE_CONFIRMADO"]').exists())!
    await estado.setValue('CIERRE_CONFIRMADO')
    const guardar = () => w.findAll('button').find(b => b.text() === 'Guardar revisión')!

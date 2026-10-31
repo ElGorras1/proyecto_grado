@@ -25,6 +25,24 @@ consulta. «Artículo del corte» selecciona una identidad exacta; la búsqueda 
 texto sigue disponible al consultar todos los artículos. Un artículo sin elegibles
 conserva su advertencia y requiere revisar las exclusiones, no se da por normal.
 
+En Reportes, la consulta inicial utiliza Kárdex escaneado y su última gestión
+disponible hasta 2025. Se puede seleccionar otra gestión u origen y pulsar
+«Aplicar filtros». Si se edita sin aplicar, la tabla y su descarga conservan la
+consulta anterior y muestran un aviso. El informe institucional comienza en 2025,
+conservando por separado saldos actuales, documentos históricos y registros digitales.
+
+En Analítica histórica, «Descargar auditoría filtrada CSV» incluye todas las
+filas de la consulta aplicada, aunque ocupen varias páginas. Antes de descargar,
+aplicar cualquier cambio de filtros. El archivo conserva versión, huella, umbral,
+puntuación, partición, revisión y fuente del corte; no certifica discrepancias ni
+adopta silenciosamente correcciones posteriores. Desde «Ver evidencia» se puede
+abrir HIL o el grafo del mismo artículo. Las correcciones documentales y las
+conclusiones del hallazgo se registran en sus respectivos formularios.
+
+El corte del modelo cuenta 216 documentos de 2025; el reporte vigente cuenta 215
+con año asignable porque una fila fue marcada después como fecha estimada. Los
+188 resultados puntuados y los cuatro avisos de 2025 se mantienen en el modelo.
+
 ## Herramientas y permisos
 
 | Herramienta | Uso principal |

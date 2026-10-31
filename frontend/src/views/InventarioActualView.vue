@@ -1194,7 +1194,7 @@ async function registrarTransaccion() {
         <p v-if="['RECONSTRUIDO', 'HIPOTESIS', 'ANOTACION_MARGEN'].includes(articuloSeleccionado.base_kardex.origen_saldo || '')">Origen: {{ articuloSeleccionado.base_kardex.origen_saldo }}. Saldo escrito cotejado: {{ articuloSeleccionado.base_kardex.saldo_documental ?? 'vacío o no legible' }}. La reconstrucción se conserva separada de la fuente.</p>
         <p>Fuente documental #{{ articuloSeleccionado.base_kardex.movimiento_id }} · lote #{{ articuloSeleccionado.base_kardex.lote_id }} · {{ articuloSeleccionado.base_kardex.fecha_movimiento }}.</p>
         <p v-if="articuloSeleccionado.base_kardex.fuente_cierre">Estado del cierre: {{ articuloSeleccionado.base_kardex.fuente_cierre.estado }}<span v-if="articuloSeleccionado.base_kardex.fuente_cierre.referencia"> · Ref: {{ articuloSeleccionado.base_kardex.fuente_cierre.referencia }}</span></p>
-        <p>Este saldo documental será el punto de partida al registrar la primera operación moderna. No es un conteo físico de 2026; las hojas escaneadas permanecen intactas para auditoría.</p>
+        <p>Este saldo documental será el punto de partida al registrar la primera operación moderna. No acredita un conteo físico actual; las hojas escaneadas permanecen intactas para auditoría.</p>
         <p v-if="articuloSeleccionado.base_kardex.motivo_bloqueo" class="alert alert-error">{{ articuloSeleccionado.base_kardex.motivo_bloqueo }}</p>
         <router-link :to="{ path: '/kardex-digital', query: { articulo_id: articuloSeleccionado.id } }">Ver Kárdex y evidencia</router-link>
       </section>

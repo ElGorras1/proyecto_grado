@@ -8,6 +8,7 @@ import BuscadorArticulos from '@/components/BuscadorArticulos.vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { GESTION_DOCUMENTAL_HASTA, ultimaGestionDocumental } from '@/config/alcance'
 import { categoriasHil, type TratamientoHil } from '@/services/tratamientoHil'
 
 
@@ -169,7 +170,7 @@ const evidenciaCierreRevisada = ref(false)
 const candidatoCierre = computed(() => cobertura.value?.candidatos_cierre?.find(f => f.movimiento_id === filaCierre.value))
 watch(filaCierre, () => { evidenciaCierreRevisada.value = false })
 let consultaCobertura = 0
-const tramoCobertura = ref({ gestion_desde: new Date().getFullYear(), gestion_hasta: new Date().getFullYear(), estado: 'PENDIENTE', paginas_faltantes: '', descripcion: '', referencia: '' })
+const tramoCobertura = ref({ gestion_desde: GESTION_DOCUMENTAL_HASTA, gestion_hasta: GESTION_DOCUMENTAL_HASTA, estado: 'PENDIENTE', paginas_faltantes: '', descripcion: '', referencia: '' })
 const guardandoCobertura = ref(false)
 async function cargarCobertura() {
   if (!articuloSeleccionado.value) return
@@ -181,6 +182,8 @@ async function cargarCobertura() {
     const datos = (await api.get(`/kardex/cobertura/${id}`)).data
     if (consulta !== consultaCobertura || articuloSeleccionado.value?.id !== id) return
     cobertura.value = datos
+    const ultima = ultimaGestionDocumental(datos.evidencia_disponible?.gestiones_con_filas?.map((g: { gestion: number | null }) => g.gestion).filter((g: number | null): g is number => g !== null) ?? [])
+    tramoCobertura.value = { gestion_desde: ultima || GESTION_DOCUMENTAL_HASTA, gestion_hasta: ultima || GESTION_DOCUMENTAL_HASTA, estado: 'PENDIENTE', paginas_faltantes: '', descripcion: '', referencia: '' }
     filaCierre.value = datos.fuente_cierre?.estado !== 'PROPUESTA' ? datos.fuente_cierre?.seleccion?.movimiento_id ?? null : null
     const r = cobertura.value?.revision
     if (r) revisionCobertura.value = { estado: r.estado, referencia: r.referencia ?? '', observacion: r.observacion === 'La cobertura todavía no ha sido revisada.' ? '' : r.observacion }
@@ -233,7 +236,8 @@ onMounted(async () => {
   if (resumenTandas.value.some(t => t.id === tandaRuta)) tandaSeleccionada.value = tandaRuta
   const destino = articulos.value.find(a => a.id === Number(route.query.articulo_id))
   if (destino) {
-    seleccionarArticulo(destino, route.query.tab === 'hil' ? 'hil' : 'historial')
+    const tab = route.query.tab
+    seleccionarArticulo(destino, tab === 'hil' || tab === 'grafo' || tab === 'cobertura' ? tab : 'historial')
   }
   try { limitesCarga.value = (await api.get('/kardex/limites-carga')).data } catch { /* el servidor siempre verifica los límites */ }
 })
@@ -252,13 +256,11 @@ async function cargarArticulos() {
   }
 }
 
-function seleccionarArticulo(art: Articulo, tab: 'historial' | 'hil' = 'historial') {
+function seleccionarArticulo(art: Articulo, tab: 'historial' | 'hil' | 'grafo' | 'cobertura' = 'historial') {
   articuloSeleccionado.value = art
   loteSeleccionado.value = null
   vistaActual.value = 'historial'
-  subPestaña.value = tab
-  if (tab === 'hil') cargarErroresHIL()
-  else cargarHistorial()
+  cambiarPestaña(tab)
 }
 
 function irACrearArticulo() {

@@ -1,9 +1,13 @@
 """API de auditoría retrospectiva. Nunca modifica movimientos."""
 
+import csv
+import io
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response
 from sqlalchemy import case
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -20,6 +24,7 @@ from app.services.evaluacion_analitica import diagnosticar
 from app.services.evaluacion_temporal import preparar_corte_temporal
 from app.services.trabajador_analitica import evento
 from app.services.resumen_gestiones import resumir_gestiones
+from app.api.v1.endpoints.reportes import _celda_csv
 
 router = APIRouter(prefix="/analitica", tags=["Auditoría histórica"])
 lector = require_roles("Administrador", "Operador", "Auditor")
@@ -208,6 +213,16 @@ def resultados(
     _=Depends(lector),
 ):
     m = obtener(db, ModeloHistorico, modelo_id)
+    q = consulta_resultados(db, m, gestion, articulo, articulo_id, nodo, estado, seleccion)
+    return {
+        "total": q.count(),
+        "pagina": pagina,
+        "filas": [resultado_publico(r) for r in q.offset((pagina - 1) * limite).limit(limite)],
+    }
+
+
+def consulta_resultados(db, m, gestion, articulo, articulo_id, nodo, estado, seleccion):
+    """La lista y el archivo comparten filtros, nombres del corte y orden estable."""
     q = db.query(ResultadoHistorico).filter_by(modelo_id=m.id)
     if articulo_id is not None:
         q = q.filter_by(articulo_id=articulo_id)
@@ -239,16 +254,108 @@ def resultados(
                 {id: posicion for posicion, id in enumerate(ids_ordenados)},
                 value=ResultadoHistorico.movimiento_id,
             )
-    return {
-        "total": q.count(),
-        "pagina": pagina,
-        "filas": [
-            resultado_publico(r)
-            for r in q.order_by(orden, ResultadoHistorico.movimiento_id)
-            .offset((pagina - 1) * limite)
-            .limit(limite)
-        ],
-    }
+    return q.order_by(orden, ResultadoHistorico.movimiento_id)
+
+
+@router.get("/resultados.csv")
+def exportar_resultados(
+    modelo_id: str,
+    gestion: int | None = Query(None, ge=1, le=9999),
+    articulo: str | None = Query(None, max_length=150),
+    articulo_id: int | None = Query(None, gt=0),
+    nodo: str | None = Query(None, max_length=100),
+    estado: (
+        Literal["PENDIENTE", "EN_REVISION", "JUSTIFICADO", "REQUIERE_SEGUIMIENTO", "CERRADO"] | None
+    ) = None,
+    seleccion: Literal["todos", "alertas", "control", "top_modelo", "top_regla"] = "todos",
+    db: Session = Depends(get_db),
+    _=Depends(lector),
+):
+    m = obtener(db, ModeloHistorico, modelo_id)
+    if m.estado != "COMPLETADO":
+        raise HTTPException(409, "La descarga requiere un modelo completado.")
+    consulta = consulta_resultados(db, m, gestion, articulo, articulo_id, nodo, estado, seleccion)
+    buffer = io.StringIO(newline="")
+    buffer.write("\ufeff")
+    escritor = csv.writer(buffer, delimiter=";")
+    escritor.writerow(
+        [
+            "Modelo",
+            "Huella del corte",
+            "Modelo creado en",
+            "Exportado en UTC",
+            "Umbral",
+            "Resultado ID",
+            "Movimiento ID",
+            "Artículo ID",
+            "Gestión documental",
+            "Código del corte",
+            "Artículo del corte",
+            "Fecha del corte",
+            "Detalle del corte",
+            "Nodo del corte",
+            "Ingreso",
+            "Salida",
+            "Puntuación",
+            "Aviso estadístico",
+            "Partición",
+            "Muestra de control",
+            "Estado de revisión",
+            "Revisión número",
+            "Etiqueta de revisión",
+            "Lote",
+            "Página",
+            "Fila",
+            "Fotografía del corte",
+            "Alcance",
+        ]
+    )
+    exportado = datetime.now(UTC).isoformat()
+    # Materializar durante la sesión evita consultar la base después de cerrarla.
+    for r in consulta.yield_per(500):
+        f = r.snapshot
+        escritor.writerow(
+            [
+                _celda_csv(v)
+                for v in [
+                    m.id,
+                    m.huella,
+                    m.creado_en.isoformat(),
+                    exportado,
+                    m.umbral,
+                    r.id,
+                    r.movimiento_id,
+                    r.articulo_id,
+                    r.gestion,
+                    f.get("codigo"),
+                    f.get("articulo"),
+                    f.get("fecha"),
+                    f.get("detalle"),
+                    r.nodo,
+                    f.get("ingresos"),
+                    f.get("salidas"),
+                    r.score,
+                    r.alerta,
+                    r.particion,
+                    r.muestra_control,
+                    r.estado_revision,
+                    r.revision_numero,
+                    r.etiqueta,
+                    f.get("lote_id"),
+                    f.get("numero_pagina"),
+                    f.get("orden_fila"),
+                    f.get("ruta_imagen_respaldo"),
+                    "Corte conservado; aviso estadístico, no discrepancia confirmada ni dato vigente",
+                ]
+            ]
+        )
+    return Response(
+        buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="auditoria_historica_{gestion or "todas"}.csv"'
+        },
+    )
 
 
 @router.get("/resultados/{resultado_id}")
