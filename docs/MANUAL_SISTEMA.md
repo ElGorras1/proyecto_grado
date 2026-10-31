@@ -1,6 +1,6 @@
 # Manual del sistema
 
-Fundación Simón I. Patiño · Actualizado el 30/10/2026.
+Fundación Simón I. Patiño · Actualizado el 31/10/2026.
 [Inicio](../README.md) · [Estado, pruebas y pendientes](ESTADO_Y_VALIDACION.md).
 
 ## Propósito y componentes
@@ -18,6 +18,12 @@ actuales. Para consultar el detector, abrir Analítica histórica, seleccionar l
 versión del 20/10, elegir Gestión documental 2025 y aplicar filtros. Puede combinarse
 con el nombre o código del artículo y la selección de alertas. El filtro muestra
 puntajes ya calculados; no entrena un modelo nuevo ni confirma una irregularidad.
+
+El panel «Qué gestiones ya tienen puntuación» resume disponibles, elegibles,
+puntuados, alertas y no elegibles de cada año del corte. «Ver gestión» abre su
+consulta. «Artículo del corte» selecciona una identidad exacta; la búsqueda de
+texto sigue disponible al consultar todos los artículos. Un artículo sin elegibles
+conserva su advertencia y requiere revisar las exclusiones, no se da por normal.
 
 ## Herramientas y permisos
 
@@ -89,9 +95,15 @@ en la base.
 
 Las áreas inferidas se asignaron por parecido y frecuencias de artículo, hoja y
 archivo; su soporte es heurístico, no una probabilidad validada. Se conserva la sigla
-literal y la condición inferida. C+C es histórica e inactiva; CEDOC y CEDOAL conservan
+literal y la condición inferida. C+C conserva su marca histórica/inactiva en el catálogo documental; CEDOC y CEDOAL conservan
 identidades separadas. Confirmar un alias exige cotejo y motivo; no confirma las filas
 previas. Desactivarlo impide nuevas asignaciones por esa lectura.
+
+Por indicación del titular están habilitadas las 11 áreas conocidas como ubicaciones
+operativas, incluida C+C para el alcance hasta 2025. Se conservaron los identificadores
+de CEDOAL y Galería, y se añadieron las otras nueve. La habilitación no confirma
+equivalencias del archivo ni asigna existencias. La pantalla informa disponibilidad
+de transferencias y advierte dependencias incompatibles con una baja.
 
 Decisiones que deben conservarse al continuar la revisión:
 
@@ -191,7 +203,10 @@ Con PostgreSQL y dependencias preparados, iniciar desde la raíz:
 .\iniciar-sistema.ps1
 ```
 
-Interfaz: `http://localhost:5173/`. API: `http://127.0.0.1:8000/`.
+Interfaz: `http://localhost:5173/`. La API usa `VITE_API_BASE_URL`; por defecto,
+`http://127.0.0.1:8000/api/v1`. En esta instalación está configurada en el puerto
+8010. El iniciador lee los archivos de entorno de desarrollo en la misma precedencia
+que Vite y comprueba el puerto configurado.
 El iniciador usa la instalación existente; no inicializa la base. La conexión, claves
 y demás configuración se guardan en `.env`, fuera de Git. Referencia de entorno:
 Python 3.11 (entorno local) o 3.12 (instalación limpia comprobada), y Node 24,

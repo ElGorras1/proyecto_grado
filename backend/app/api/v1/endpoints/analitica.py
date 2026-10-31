@@ -19,6 +19,7 @@ from app.services.datos_analitica import huella, leer_corte, snapshot
 from app.services.evaluacion_analitica import diagnosticar
 from app.services.evaluacion_temporal import preparar_corte_temporal
 from app.services.trabajador_analitica import evento
+from app.services.resumen_gestiones import resumir_gestiones
 
 router = APIRouter(prefix="/analitica", tags=["Auditoría histórica"])
 lector = require_roles("Administrador", "Operador", "Auditor")
@@ -178,6 +179,11 @@ def evaluacion(modelo_id: str, db: Session = Depends(get_db), _=Depends(lector))
     return diagnosticar(m, filas)["evaluacion"]
 
 
+@router.get("/modelos/{modelo_id}/gestiones")
+def gestiones(modelo_id: str, db: Session = Depends(get_db), _=Depends(lector)):
+    return resumir_gestiones(db, obtener(db, ModeloHistorico, modelo_id))
+
+
 @router.get("/modelos/{modelo_id}/diagnostico")
 def diagnostico(modelo_id: str, db: Session = Depends(get_db), _=Depends(lector)):
     m = obtener(db, ModeloHistorico, modelo_id)
@@ -190,6 +196,7 @@ def resultados(
     modelo_id: str,
     gestion: int | None = Query(None, ge=1, le=9999),
     articulo: str | None = Query(None, max_length=150),
+    articulo_id: int | None = Query(None, gt=0),
     nodo: str | None = Query(None, max_length=100),
     estado: (
         Literal["PENDIENTE", "EN_REVISION", "JUSTIFICADO", "REQUIERE_SEGUIMIENTO", "CERRADO"] | None
@@ -202,6 +209,8 @@ def resultados(
 ):
     m = obtener(db, ModeloHistorico, modelo_id)
     q = db.query(ResultadoHistorico).filter_by(modelo_id=m.id)
+    if articulo_id is not None:
+        q = q.filter_by(articulo_id=articulo_id)
     if gestion is not None:
         q = q.filter_by(gestion=gestion)
     if nodo:

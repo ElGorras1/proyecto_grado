@@ -5,6 +5,25 @@ $backend = Join-Path $raiz 'backend'
 $frontend = Join-Path $raiz 'frontend'
 $python = Join-Path $backend '.venv\Scripts\python.exe'
 $vite = Join-Path $frontend 'node_modules\vite\bin\vite.js'
+$urlApi = 'http://127.0.0.1:8000/api/v1'
+# La misma precedencia de archivos que Vite en modo desarrollo.
+foreach ($archivoEntorno in @('.env', '.env.local', '.env.development', '.env.development.local')) {
+    $rutaEntorno = Join-Path $frontend $archivoEntorno
+    if (Test-Path -LiteralPath $rutaEntorno) {
+        foreach ($lineaEntorno in Get-Content -LiteralPath $rutaEntorno) {
+            if ($lineaEntorno -match '^\s*VITE_API_BASE_URL\s*=\s*(.+?)\s*$') {
+                $urlApi = $Matches[1].Trim().Trim('"').Trim("'")
+            }
+        }
+    }
+}
+if ($env:VITE_API_BASE_URL) { $urlApi = $env:VITE_API_BASE_URL }
+$direccionApi = $null
+if (-not [Uri]::TryCreate($urlApi, [UriKind]::Absolute, [ref]$direccionApi) -or
+    $direccionApi.Scheme -ne 'http' -or $direccionApi.Host -notin @('localhost', '127.0.0.1')) {
+    throw 'El inicio local requiere VITE_API_BASE_URL con una dirección HTTP de localhost o 127.0.0.1.'
+}
+$puertoApi = $direccionApi.Port
 
 if (-not (Test-Path -LiteralPath $python)) {
     throw 'Falta backend\.venv. Instala las dependencias del backend antes de iniciar.'
@@ -24,11 +43,11 @@ $registro = Join-Path $env:TEMP 'sistema-activos-logs'
 New-Item -ItemType Directory -Path $registro -Force | Out-Null
 $marca = Get-Date -Format 'yyyyMMdd-HHmmss'
 
-if (-not (Get-NetTCPConnection -State Listen -LocalPort 8000 -ErrorAction SilentlyContinue)) {
-    $api = Start-Process -FilePath $python -ArgumentList @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000') -WorkingDirectory $backend -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $registro "backend-$marca.log") -RedirectStandardError (Join-Path $registro "backend-$marca.err.log")
+if (-not (Get-NetTCPConnection -State Listen -LocalPort $puertoApi -ErrorAction SilentlyContinue)) {
+    $api = Start-Process -FilePath $python -ArgumentList @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', [string]$puertoApi) -WorkingDirectory $backend -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $registro "backend-$marca.log") -RedirectStandardError (Join-Path $registro "backend-$marca.err.log")
     Write-Host "API iniciada (PID $($api.Id))."
 } else {
-    Write-Host 'El puerto 8000 ya está ocupado. Revisa si la API ya está iniciada.'
+    Write-Host "El puerto $puertoApi ya está ocupado. Se comprobará la conexión configurada."
 }
 
 if (-not (Get-NetTCPConnection -State Listen -LocalPort 5173 -ErrorAction SilentlyContinue)) {
@@ -39,7 +58,7 @@ if (-not (Get-NetTCPConnection -State Listen -LocalPort 5173 -ErrorAction Silent
 }
 
 $lista = @(
-    @{ Nombre = 'API y conexión a la base'; Url = 'http://127.0.0.1:8000/health/ready' },
+    @{ Nombre = 'API y conexión a la base'; Url = "http://127.0.0.1:$puertoApi/health/ready" },
     @{ Nombre = 'Interfaz'; Url = 'http://localhost:5173/' }
 )
 foreach ($servicio in $lista) {

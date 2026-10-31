@@ -1,5 +1,38 @@
 # Estado, pruebas y pendientes
 
+## Consulta por gestión y áreas habilitadas
+
+Actualización del 31/10/2026. Isolation Forest conserva su modelo y puntuaciones;
+se añadió un resumen anual del corte con disponibles, elegibles, puntuados, alertas
+y exclusiones. Las 21 gestiones 2005–2025 tienen puntuados todos sus elegibles:
+8.367 resultados y 359 avisos. Para 2025 hay 216 documentales, 188 elegibles y
+puntuados, cuatro avisos y 28 excluidos. Filtrar una gestión no reentrena el modelo
+ni convierte un aviso en discrepancia confirmada. La selección de artículo ahora
+admite un identificador exacto, para no mezclar títulos parecidos. Al entrar sin
+gestión explícita se muestra la última del modelo, actualmente 2025.
+
+El titular indicó habilitar todas las áreas conocidas. Con respaldo completo
+restaurado y verificado, se habilitaron 11 ubicaciones: nueve nuevas y dos
+actualizadas, conservando las identidades de CEDOAL y Galería. Los códigos de estas
+dos se normalizaron a CEDOAL y GAL desde el catálogo existente. C+C también queda
+habilitada como ubicación para el alcance indicado; su marca histórica del catálogo
+documental no se reescribe. Ventas, compras, bajas y consignaciones siguen siendo
+operaciones. No se asignaron cantidades ni se confirmaron las 41 equivalencias
+documentales pendientes. Los demás registros y los 927 archivos privados se
+verificaron intactos.
+
+Pruebas de este cambio: 414 aprobadas y cuatro omitidas en SQLite; 205 aprobadas
+en PostgreSQL aislado; 122 de interfaz, tipos y compilación correctos. La consulta
+visual con sesión técnica temporal de Auditor consultó la aplicación
+real: gestión 2025, artículo exacto y las 11 áreas activas, sin intentos de escritura
+ni errores de JavaScript/API. No es una evaluación institucional con participantes.
+Evidencia: outputs/cierre_gestiones_areas_20261031/.
+
+La API actualizada está iniciada en 127.0.0.1:8010 y la interfaz local la utiliza.
+El iniciador respeta VITE_API_BASE_URL y la precedencia de archivos de Vite; el
+puerto predeterminado continúa siendo 8000 cuando no existe configuración local.
+Los apartados inferiores conservan los cortes anteriores a esta habilitación.
+
 ## Alcance documental confirmado hasta 2025
 
 El titular indicó que la información institucional autorizada llega hasta 2025 y

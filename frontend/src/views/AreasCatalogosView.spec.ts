@@ -23,6 +23,26 @@ function boton(w: ReturnType<typeof mount>, texto: string) {
   return w.findAll('button').find(b => b.text().includes(texto))!
 }
 describe('Administración de áreas y catálogos', () => {
+  it('explica la condición de transferencia sin activar áreas ni confirmar equivalencias', async () => {
+    const w = await montar()
+    const disponibilidad = w.get('[aria-label="Disponibilidad de áreas"]')
+    expect(disponibilidad.text()).toContain('1 ubicación activa')
+    expect(disponibilidad.text()).toContain('1 equivalencias vigentes por revisar')
+    expect(disponibilidad.text()).toContain('al menos dos ubicaciones activas')
+    expect(post).not.toHaveBeenCalled(); expect(put).not.toHaveBeenCalled()
+    w.unmount()
+  })
+  it('advierte si un área importada de baja conserva dependencias', async () => {
+    const original = get.getMockImplementation()!
+    get.mockImplementation((url: string) => url === base ? Promise.resolve({ data: [
+      { id: 1, nombre: 'Galería', estado: 'activo', dependencias: { stock: 0, custodias_abiertas: 0, usuarios_activos: 0 } },
+      { id: 2, nombre: 'Depósito QA', estado: 'baja', dependencias: { stock: 3, custodias_abiertas: 0, usuarios_activos: 0 } },
+    ] }) : original(url))
+    const w = await montar()
+    expect(w.get('[aria-label="Disponibilidad de áreas"] [role="alert"]').text()).toContain('conservan stock')
+    expect(put).not.toHaveBeenCalled()
+    w.unmount()
+  })
   it('separa ubicaciones, áreas antiguas y adscripción de cuentas', async () => {
     const w = await montar()
     expect(w.text()).toContain('Stock: 3')

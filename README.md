@@ -1,6 +1,6 @@
 # Sistema de Gestión y Trazabilidad de Activos Operativos
 
-Fundación Simón I. Patiño · Documentación actualizada el 30/10/2026.
+Fundación Simón I. Patiño · Documentación actualizada el 31/10/2026.
 
 Digitaliza Kárdex, conserva fotografías y revisiones humanas, gestiona inventario y
 operaciones por área, genera reportes y apoya la auditoría con reglas e Isolation Forest.
@@ -25,7 +25,9 @@ Con PostgreSQL y dependencias preparados, ejecutar desde la raíz:
 .\iniciar-sistema.ps1
 ```
 
-Interfaz: `http://localhost:5173/`. API: `http://127.0.0.1:8000/`.
+Interfaz: `http://localhost:5173/`. La API utiliza el puerto indicado por
+`VITE_API_BASE_URL` en los archivos de entorno del frontend: 8000 por defecto y
+8010 en la instalación local revisada. El iniciador respeta esa configuración.
 El inicio usa la instalación existente. El manual contiene las comprobaciones y el respaldo.
 
 Para una instalación nueva, usar los archivos de dependencias fijadas y la sección

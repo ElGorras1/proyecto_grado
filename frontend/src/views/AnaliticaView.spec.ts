@@ -1,23 +1,32 @@
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import AnaliticaView from './AnaliticaView.vue'
-const { get, post, auth } = vi.hoisted(() => ({
+const { get, post, auth, ruta } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   auth: { rol: 'Administrador' },
+  ruta: { gestion: '2021' } as Record<string, string | undefined>,
 }))
 vi.mock('@/services/api', () => ({
   default: { get, post, defaults: { baseURL: 'http://localhost:8000/api/v1' } },
 }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: { gestion: '2021' } }) }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: ruta }) }))
 const perfil = {
   historicos_activos: 200,
   elegibles: 180,
   total: 200,
   exclusiones: { pendientes_hil: 20 },
   por_gestion: { '2021': { disponibles: 200, elegibles: 180 } },
+  por_articulo: {
+    '1': { nombre: 'Historia institucional', disponibles: 190, elegibles: 180 },
+    '2': { nombre: 'Historia institucional suplemento', disponibles: 10, elegibles: 0 },
+  },
 }
+const resumen = { modelo_id: 'modelo-1', totales: { analizados: 180, alertas: 8, no_elegibles: 20 },
+  alcance: 'Puntajes del corte por fecha documental; no son anomalías confirmadas.',
+  gestiones: [{ gestion: '2021', documentales: 200, elegibles: 180, analizados: 180, alertas: 8,
+    no_elegibles: 20, elegibles_sin_puntuar: 0, evaluacion_reservada: 36, estado: 'PUNTUACION_COMPLETA' }] }
 let hayModelo = false
 const modelo = {
   id: 'modelo-1',
@@ -31,6 +40,7 @@ const modelo = {
 beforeEach(() => {
   vi.useFakeTimers()
   auth.rol = 'Administrador'
+  ruta.gestion = '2021'
   hayModelo = false
   get.mockReset()
   post.mockReset()
@@ -41,6 +51,7 @@ beforeEach(() => {
         data: { filas: hayModelo ? [modelo] : [], total: hayModelo ? 1 : 0 },
       })
     if (url.endsWith('/evaluacion')) return Promise.resolve({ data: {} })
+    if (url.endsWith('/gestiones')) return Promise.resolve({ data: resumen })
     if (url.endsWith('/modelos/modelo-1')) return Promise.resolve({ data: modelo })
     return Promise.resolve({ data: { total: 0, filas: [] } })
   })
@@ -52,6 +63,62 @@ function montar() {
   return mount(AnaliticaView, { global: { stubs: { RouterLink: RouterLinkStub, ReglasHistoricas: true } } })
 }
 describe('Auditoría histórica', () => {
+  it('conserva la consulta anterior mientras se actualiza el servicio del resumen', async () => {
+    hayModelo = true
+    const original = get.getMockImplementation()!
+    get.mockImplementation((url: string) => url.endsWith('/gestiones')
+      ? Promise.reject({ isAxiosError: true, response: { status: 404 } }) : original(url))
+    const w = montar()
+    await flushPromises()
+    expect(w.text()).toContain('Resultados por gestión')
+    expect(w.find('[role="alert"]').exists()).toBe(false)
+    expect(w.find('[aria-label="Artículo del corte"]').exists()).toBe(false)
+    w.unmount()
+  })
+  it('expone cobertura por gestión sin presentar excluidos como normales', async () => {
+    hayModelo = true
+    const w = montar()
+    await flushPromises()
+    const tabla = w.get('[aria-label="Cobertura de Isolation Forest por gestión"]')
+    expect(tabla.text()).toContain('180 movimientos puntuados')
+    expect(tabla.text()).toContain('20 registros no elegibles')
+    expect(tabla.text()).toContain('Elegibles puntuados')
+    await tabla.get('button').trigger('click')
+    await flushPromises()
+    expect(get).toHaveBeenCalledWith('/analitica/resultados', expect.objectContaining({ params: expect.objectContaining({ gestion: '2021', pagina: 1 }) }))
+    expect(post).not.toHaveBeenCalled()
+    w.unmount()
+  })
+  it('elige la última gestión del modelo aunque el calendario del equipo sea posterior', async () => {
+    hayModelo = true
+    delete ruta.gestion
+    vi.setSystemTime(new Date('2040-01-01T12:00:00Z'))
+    const original = get.getMockImplementation()!
+    const corte = { ...perfil, por_gestion: { '2024': { disponibles: 100, elegibles: 90 }, '2025': { disponibles: 100, elegibles: 90 } } }
+    const version = { ...modelo, perfil: corte }
+    get.mockImplementation((url: string) => {
+      if (url.endsWith('/modelos')) return Promise.resolve({ data: { total: 1, filas: [version] } })
+      if (url.endsWith('/modelos/modelo-1')) return Promise.resolve({ data: version })
+      return original(url)
+    })
+    const w = montar()
+    await flushPromises()
+    expect(w.get<HTMLSelectElement>('[aria-label="Gestión documental"]').element.value).toBe('2025')
+    expect(get).toHaveBeenCalledWith('/analitica/resultados', expect.objectContaining({ params: expect.objectContaining({ gestion: '2025' }) }))
+    w.unmount()
+  })
+  it('selecciona un artículo exacto y explica la ausencia de elegibles', async () => {
+    hayModelo = true
+    const w = montar()
+    await flushPromises()
+    await w.get('[aria-label="Artículo del corte"]').setValue('2')
+    expect(w.get('[aria-label="Artículo o código"]').attributes('disabled')).toBeDefined()
+    expect(w.text()).toContain('no tiene movimientos elegibles')
+    await w.get('form.filtros').trigger('submit')
+    await flushPromises()
+    expect(get).toHaveBeenCalledWith('/analitica/resultados', expect.objectContaining({ params: expect.objectContaining({ articulo_id: '2', articulo: undefined }) }))
+    w.unmount()
+  })
   it('conserva una búsqueda escrita mientras termina la consulta anterior', async () => {
     hayModelo = true
     const w = montar()

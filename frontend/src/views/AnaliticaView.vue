@@ -36,6 +36,23 @@ interface Modelo {
   umbral: number | null
   datos_cambiaron?: boolean
 }
+interface GestionAnalizada {
+  gestion: string
+  documentales: number
+  elegibles: number
+  analizados: number
+  alertas: number
+  no_elegibles: number
+  elegibles_sin_puntuar: number
+  evaluacion_reservada: number
+  estado: string
+}
+interface ResumenGestiones {
+  modelo_id: string
+  gestiones: GestionAnalizada[]
+  totales: { analizados: number; alertas: number; no_elegibles: number }
+  alcance: string
+}
 interface Fila {
   id: number
   articulo: string
@@ -86,17 +103,20 @@ const paginaModelos = ref(1)
 const seleccionado = ref('')
 const modelo = ref<Modelo | null>(null)
 const diagnostico = ref<DiagnosticoAnalitica | null>(null)
+const resumenGestiones = ref<ResumenGestiones | null>(null)
 const filas = ref<Resultado[]>([])
 const total = ref(0)
 const pagina = ref(1)
 const gestion = ref(typeof route.query.gestion === 'string' ? route.query.gestion : '')
 const articulo = ref('')
+const articuloId = ref('')
 const nodo = ref('')
 const estado = ref('')
 const seleccion = ref('todos')
 const aplicados = ref({
   gestion: gestion.value,
   articulo: '',
+  articulo_id: '',
   nodo: '',
   estado: '',
   seleccion: 'todos',
@@ -106,6 +126,7 @@ const filtrosPendientes = computed(
     JSON.stringify({
       gestion: gestion.value,
       articulo: articulo.value.trim(),
+      articulo_id: articuloId.value,
       nodo: nodo.value.trim(),
       estado: estado.value,
       seleccion: seleccion.value,
@@ -143,6 +164,15 @@ const gestiones = computed(() =>
     .sort()
     .reverse(),
 )
+const articulosDelCorte = computed(() => Object.entries(modelo.value?.perfil.por_articulo ?? {})
+  .map(([id, datos]) => ({ id, ...datos }))
+  .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')))
+const articuloElegido = computed(() => articulosDelCorte.value.find(a => a.id === articuloId.value))
+let gestionInicialDefinida = typeof route.query.gestion === 'string'
+const estadosGestion: Record<string, string> = {
+  PUNTUACION_COMPLETA: 'Elegibles puntuados', PUNTUACION_PARCIAL: 'Puntuación incompleta',
+  SIN_RESULTADOS: 'Sin puntuar', SIN_ELEGIBLES: 'Sin datos elegibles', REVISAR_COBERTURA: 'Revisar cobertura',
+}
 const foto = computed(() => {
   const ruta = detalle.value?.snapshot.ruta_imagen_respaldo?.replace(/\\/g, '/')
   if (!ruta?.startsWith('storage/')) return ''
@@ -177,6 +207,7 @@ async function cargar(p = 1, nuevos = false) {
       filas.value = []
       modelo.value = null
       diagnostico.value = null
+      resumenGestiones.value = null
       return
     }
     const id = seleccionado.value
@@ -184,42 +215,52 @@ async function cargar(p = 1, nuevos = false) {
       modelo.value = null
       filas.value = []
       diagnostico.value = null
+      resumenGestiones.value = null
     }
     const filtros = nuevos
       ? {
           gestion: gestion.value,
           articulo: articulo.value.trim(),
+          articulo_id: articuloId.value,
           nodo: nodo.value.trim(),
           estado: estado.value,
           seleccion: seleccion.value,
         }
       : aplicados.value
-    const [m, r, e] = await Promise.all([
+    const [m, r, g, e] = await Promise.all([
       api.get<Modelo>('/analitica/modelos/' + id),
       api.get('/analitica/resultados', {
         params: {
           modelo_id: id,
           gestion: filtros.gestion || undefined,
           articulo: filtros.articulo || undefined,
+          articulo_id: filtros.articulo_id || undefined,
           nodo: filtros.nodo || undefined,
           estado: filtros.estado || undefined,
           seleccion: filtros.seleccion,
           pagina: p,
         },
       }),
+      api.get<ResumenGestiones>('/analitica/modelos/' + id + '/gestiones').catch((e: unknown) => {
+        if (isAxiosError(e) && e.response?.status === 404) return { data: null }
+        throw e
+      }),
       api.get<DiagnosticoAnalitica>('/analitica/modelos/' + id + '/diagnostico'),
     ])
     if (numero !== solicitud || desmontado) return
+    if (!g.data && filtros.articulo_id) throw new Error('La selección exacta requiere el servicio actualizado.')
     aplicados.value = filtros
     modelo.value = m.data
     filas.value = r.data.filas
     total.value = r.data.total
     pagina.value = p
     diagnostico.value = e.data.version === 1 && e.data.modelo_id === id ? e.data : null
+    resumenGestiones.value = g.data?.modelo_id === id && Array.isArray(g.data.gestiones) ? g.data : null
   } catch (e) {
     if (numero === solicitud) {
       filas.value = []
       total.value = 0
+      resumenGestiones.value = null
       fallo(e)
     }
   } finally {
@@ -234,12 +275,20 @@ async function aplicarFiltros() {
   cerrarDetalle()
   await cargar(1, true)
 }
+async function verGestion(anio: string) {
+  gestion.value = anio
+  await aplicarFiltros()
+}
+function elegirArticulo() {
+  articulo.value = ''
+}
 async function limpiarFiltros() {
   await revisarSeleccion('todos')
 }
 async function revisarSeleccion(filtro: string) {
   gestion.value = ''
   articulo.value = ''
+  articuloId.value = ''
   nodo.value = ''
   estado.value = ''
   seleccion.value = filtro
@@ -251,6 +300,13 @@ async function actualizar() {
     perfil.value = (await api.get<Perfil>('/analitica/perfil')).data
     await lista()
     if (!seleccionado.value && modelos.value.length) seleccionado.value = modelos.value[0].id
+    if (!gestionInicialDefinida) {
+      const referencia = modelos.value.find(m => m.id === seleccionado.value)?.perfil ?? perfil.value
+      const disponibles = Object.keys(referencia.por_gestion).filter(g => /^\d{4}$/.test(g)).sort()
+      gestion.value = disponibles[disponibles.length - 1] ?? ''
+      aplicados.value.gestion = gestion.value
+      gestionInicialDefinida = true
+    }
     await cargar()
   } catch (e) {
     fallo(e)
@@ -382,8 +438,8 @@ onUnmounted(() => {
       <div>
         <router-link to="/">← Inicio</router-link>
         <p class="eyebrow">AUDITORÍA HISTÓRICA</p>
-        <h1>Movimientos que merecen una revisión</h1>
-        <p>Explora el Kárdex por gestión y documenta los hallazgos junto a su evidencia.</p>
+        <h1>Auditoría histórica con Isolation Forest</h1>
+        <p>Consulta los documentos disponibles hasta 2025 por gestión y artículo, y revisa cada aviso con su evidencia.</p>
       </div>
       <button :disabled="cargando" @click="actualizar">Actualizar datos</button>
     </header>
@@ -573,6 +629,22 @@ onUnmounted(() => {
         </details>
       </template>
     </section>
+    <section v-if="resumenGestiones && modelo?.estado === 'COMPLETADO'" class="panel" aria-label="Cobertura de Isolation Forest por gestión">
+      <h2>Qué gestiones ya tienen puntuación</h2>
+      <p>{{ resumenGestiones.totales.analizados }} movimientos puntuados · {{ resumenGestiones.totales.alertas }} alertas estadísticas · {{ resumenGestiones.totales.no_elegibles }} registros no elegibles.</p>
+      <p>{{ resumenGestiones.alcance }}</p>
+      <p>Los conteos siguientes corresponden a todo el corte del modelo. Los filtros de la lista se aplican debajo.</p>
+      <div class="tabla"><table>
+        <thead><tr><th>Gestión documental</th><th>Disponibles</th><th>Elegibles</th><th>Puntuados</th><th>Alertas</th><th>No elegibles</th><th>Estado</th><th>Consulta</th></tr></thead>
+        <tbody><tr v-for="g in resumenGestiones.gestiones" :key="g.gestion">
+          <td>{{ g.gestion === 'SIN_GESTION_CONFIRMADA' ? 'Sin gestión confirmada' : g.gestion }}</td>
+          <td>{{ g.documentales }}</td><td>{{ g.elegibles }}</td><td>{{ g.analizados }}</td>
+          <td>{{ g.alertas }}</td><td>{{ g.no_elegibles }}</td>
+          <td>{{ estadosGestion[g.estado] ?? g.estado }}<small v-if="g.elegibles_sin_puntuar">{{ g.elegibles_sin_puntuar }} elegibles sin puntuar</small></td>
+          <td><button v-if="/^\d{4}$/.test(g.gestion)" :disabled="cargando" @click="verGestion(g.gestion)">Ver {{ g.gestion }}</button><span v-else>Revisar fecha en HIL</span></td>
+        </tr></tbody>
+      </table></div>
+    </section>
     <section v-if="modelo?.estado === 'COMPLETADO'" class="panel">
       <h2>Resultados por gestión</h2>
       <form class="filtros" @submit.prevent="aplicarFiltros">
@@ -582,7 +654,11 @@ onUnmounted(() => {
             <option v-for="g in gestiones" :key="g">{{ g }}</option>
           </select></label
         >
-        <label>Artículo o código<input v-model="articulo" aria-label="Artículo o código" /></label>
+        <label v-if="resumenGestiones">Artículo del corte<select v-model="articuloId" aria-label="Artículo del corte" @change="elegirArticulo">
+          <option value="">Todos los artículos</option>
+          <option v-for="a in articulosDelCorte" :key="a.id" :value="a.id">{{ a.nombre }} · {{ a.elegibles }} elegibles</option>
+        </select></label>
+        <label>Artículo o código<input v-model="articulo" aria-label="Artículo o código" :disabled="!!articuloId" /></label>
         <label>Nodo exacto<input v-model="nodo" aria-label="Nodo exacto" /></label>
         <label
           >Revisión<select v-model="estado" aria-label="Revisión histórica">
@@ -613,6 +689,7 @@ onUnmounted(() => {
         <button :disabled="cargando">Aplicar filtros</button>
         <button type="button" :disabled="cargando" @click="limpiarFiltros">Limpiar filtros</button>
       </form>
+      <p v-if="articuloElegido && !articuloElegido.elegibles" role="status">Este artículo conserva documentos, pero no tiene movimientos elegibles en esta versión. Revisa su procedencia y exclusiones en HIL; la ausencia de puntuación no confirma que sus datos sean correctos.</p>
       <p>
         La gestión corresponde a la fecha del documento. Esta lista muestra los movimientos
         evaluados por la versión seleccionada.

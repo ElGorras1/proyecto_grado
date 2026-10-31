@@ -88,6 +88,7 @@ def main():
         "tests/test_circuito_piloto.py",
         "tests/test_validacion_independiente.py",
         "tests/test_particiones_articulo.py",
+        "tests/test_resumen_gestiones.py",
         "tests/test_entrega_tecnica.py",
         "tests/test_revision_funcional.py",
         "tests/test_documentos_operativos.py",

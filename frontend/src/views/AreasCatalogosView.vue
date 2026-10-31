@@ -30,6 +30,10 @@ const filtradas = computed(() => listas.value[tab.value].filter(f =>
     nombreCatalogo(f.area_oficial_id), nombreArea(f.area_id)].join(' ').toLocaleLowerCase().includes(busqueda.value.trim().toLocaleLowerCase())))
 const filas = computed(() => filtradas.value.slice((pagina.value - 1) * 20, pagina.value * 20))
 const areasActivas = computed(() => listas.value.operativas.filter(a => a.estado === 'activo'))
+const areasDeBaja = computed(() => listas.value.operativas.filter(a => a.estado === 'baja'))
+const aliasPorRevisar = computed(() => listas.value.alias.filter(a => a.activa && !a.confirmado).length)
+const ubicacionesInconsistentes = computed(() => areasDeBaja.value.filter(a =>
+  (a.dependencias?.stock ?? 0) > 0 || (a.dependencias?.custodias_abiertas ?? 0) > 0 || (a.dependencias?.usuarios_activos ?? 0) > 0))
 watch([tab, busqueda], () => { pagina.value = 1 })
 watch(tab, () => { abierto.value = false; error.value = ''; mensaje.value = ''; busqueda.value = ''; historial.value = null; consultaHistorial++; cargandoHistorial.value = false })
 watch(() => [form.value.area_oficial_id, form.value.confirmado], () => { form.value.evidencia_revisada = false })
@@ -114,6 +118,12 @@ onMounted(cargar)
     </header>
     <p v-if="error" role="alert" class="alert alert-error">{{ error }}</p>
     <p v-if="mensaje" role="status" class="alert alert-success">{{ mensaje }}</p>
+    <section v-if="!cargando && !error" aria-label="Disponibilidad de áreas">
+      <p><strong>{{ areasActivas.length }} {{ areasActivas.length === 1 ? 'ubicación activa' : 'ubicaciones activas' }}</strong> · {{ areasDeBaja.length }} de baja · {{ aliasPorRevisar }} equivalencias vigentes por revisar.</p>
+      <p v-if="areasActivas.length < 2" role="status">Las transferencias entre áreas necesitan al menos dos ubicaciones activas. Revisa las bajas y habilita únicamente las áreas respaldadas para el alcance institucional.</p>
+      <p v-else>Hay ubicaciones suficientes para transferir; cada operación también comprueba permisos y existencias.</p>
+      <p v-if="ubicacionesInconsistentes.length" role="alert">Hay áreas de baja que conservan stock, custodias o usuarios activos. Revisa esas dependencias antes de continuar.</p>
+    </section>
     <nav class="pestanas" aria-label="Administración de áreas">
       <button v-for="(titulo, clave) in titulos" :key="clave" :aria-current="tab === clave ? 'page' : undefined"
         :disabled="guardando" @click="tab = clave">{{ titulo }} ({{ listas[clave].length }})</button>
@@ -149,7 +159,7 @@ onMounted(cargar)
       <h2>Cambios · {{ tituloHistorial }}</h2>
       <p v-if="!historial.length">No hay cambios administrativos registrados.</p>
       <article v-for="revision in historial" :key="revision.id">
-        <p><strong>{{ revision.usuario }}</strong> · {{ new Date(revision.fecha).toLocaleString('es-BO') }}</p>
+        <p><strong>{{ revision.usuario || 'Mantenimiento autorizado' }}</strong> · {{ new Date(revision.fecha).toLocaleString('es-BO') }}</p>
         <p>{{ revision.detalle.motivo }}</p>
         <ul><li v-for="cambio in cambios(revision)" :key="cambio.campo">{{ cambio.campo }}: {{ cambio.anterior }} → {{ cambio.nuevo }}</li></ul>
       </article>
