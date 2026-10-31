@@ -103,6 +103,14 @@ Saldo escrito, saldo reconstruido, stock operativo y conteo físico son valores
 distintos. Avisos HIL, reglas inmediatas y rareza del modelo también tienen revisiones
 distintas. Concluir un caso de alerta no corrige existencias.
 
+El 31/10 el titular identificó como ensayo la salida 12277 de «TESTIMONIOS DE LA
+LITERATURA BOLIVIANA VOL. 2». Se retiró junto con su apertura automática, conservando
+artículo, documentos y auditoría. Su saldo de ocho unidades vuelve a mostrarse
+como base documental sin apertura operativa; no acredita existencias físicas
+actuales. La instalación queda sin movimientos digitales ni aperturas, y la
+analítica operativa no dispone de eventos para entrenar. El detector histórico
+conserva sus puntuaciones y funciona independientemente de esa capacidad futura.
+
 Si falla el servicio de lectura, la respuesta no reproduce errores internos del
 proveedor y permite reintentar el mismo lote. Un intento propio marcado FALLIDO
 retira únicamente las copias temporales creadas por esa solicitud; no se eliminan

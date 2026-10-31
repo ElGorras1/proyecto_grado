@@ -33,21 +33,37 @@ no sustituye los valores del corte por correcciones posteriores.
 
 | Prioridad | Pendiente real | Dónde cerrarlo y evidencia necesaria |
 |---|---|---|
-| 1 | Aclarar la salida digital 12277 y el saldo de seis unidades de «Testimonios de la literatura boliviana, vol. 2». | La salida de dos unidades del 14/10/2026 figura como Obsequios y Donaciones, sin referencia documental. Su condición de ensayo o hecho real está pendiente de respuesta del titular. Conservar apertura y operación; si son reales, verificar conteo, acta, ubicación y responsable antes de cualquier ajuste. |
-| 2 | Cotejar las fuentes y equivalencias del archivo. | Cobertura documental: 397 fuentes sin confirmación y 38 bases bloqueadas; Áreas y catálogos: 41 alias activos sin confirmar. Revisar fotografías y respaldo; no aprobar en bloque. |
-| 3 | Medir los aciertos del detector. | Validación del proyecto: protocolo y etiquetas independientes NORMAL/ANOMALO/INDETERMINADO, cotejadas con documentos. Actualmente cero estudios y etiquetas institucionales; no hay precisión, recall ni F1 acreditados. |
-| 4 | Evaluar grafo, tiempos y aceptación. | Aplicar los instrumentos del protocolo con tareas y participantes reales. Las pruebas automáticas no sustituyen esas mediciones. |
-| 5 | Preparar la entrega de producción. | Definir servidor y acceso institucional, HTTPS, carga y recuperación en destino. Docker permanece pospuesto por el titular. |
+| 1 | Cotejar las fuentes, equivalencias y existencias. | Cobertura documental: 397 fuentes sin confirmación y 38 bases bloqueadas; Áreas y catálogos: 41 alias activos sin confirmar. Revisar fotografías y respaldo; no aprobar en bloque. Para activar inventario operativo, aportar el cotejo o conteo que corresponda. |
+| 2 | Medir los aciertos del detector. | Validación del proyecto: protocolo y etiquetas independientes NORMAL/ANOMALO/INDETERMINADO, cotejadas con documentos. Actualmente cero estudios y etiquetas institucionales; no hay precisión, recall ni F1 acreditados. |
+| 3 | Evaluar grafo, tiempos y aceptación. | Aplicar los instrumentos del protocolo con tareas y participantes reales. Las pruebas automáticas no sustituyen esas mediciones. |
+| 4 | Preparar la entrega de producción. | Definir servidor y acceso institucional, HTTPS, carga y recuperación en destino. Docker permanece pospuesto por el titular. |
 
-La analítica de operaciones digitales continúa separada: un evento elegible no
-permite entrenarla. Se presenta como capacidad futura condicionada a datos reales;
+La analítica de operaciones digitales continúa separada: hay cero eventos elegibles
+después del retiro confirmado del ensayo. Se presenta como capacidad futura condicionada a datos reales;
 no impide consultar el Isolation Forest histórico ni requiere inventar operaciones
-de 2026 para este proyecto. No se han modificado registros institucionales durante
-este cierre técnico. La base conserva 398 artículos, 11.909 movimientos y una apertura.
+de 2026 para este proyecto. La base conserva 398 artículos y 11.908 movimientos,
+todos históricos, sin aperturas operativas. La falta de aperturas no significa que
+las existencias físicas sean cero: solo indica que todavía no se han activado con respaldo.
 
-La verificación GitHub de la entrega anterior `6a03f22` terminó correctamente en
+El titular confirmó que la salida 12277 era una prueba. Se retiraron exclusivamente
+ese movimiento y la apertura documental generada al registrarlo, sin conteo ni otros
+usos. Se conservaron el artículo 116, el cierre histórico 7235 de ocho unidades,
+todas sus fotografías, los modelos, sus resultados y las auditorías anteriores.
+La ficha completa sí contenía «factura» en referencia_documento; el campo
+referencia consultado inicialmente estaba vacío. Ninguno acreditaba un hecho real.
+
+El retiro se ensayó en una copia restaurada antes de aplicarlo; se verificó que solo
+cambiaron movimientos_kardex, apertura_inventario y la nueva auditoría 11057.
+Los demás registros, secuencias ajenas y los 927 archivos privados se conservaron.
+Siete consultas a la API confirmaron el estado documental, ausencia de la operación
+y preservación de 8.367 puntuaciones y 359 avisos históricos. Los dos respaldos
+se restauraron y verificaron: backend/backups/respaldo_20261031T200216187438Z/
+y backend/backups/respaldo_20261031T200444109834Z/. Expediente privado:
+outputs/retiro_ensayo_12277_20261031/.
+
+La verificación GitHub del código `9df5759` terminó correctamente en
 interfaz, servidor Python 3.11/3.12 y PostgreSQL:
-[ejecución 41214169809](https://github.com/ElGorras1/proyecto_grado/actions/runs/41214169809).
+[ejecución 41235540726](https://github.com/ElGorras1/proyecto_grado/actions/runs/41235540726).
 La ejecución de producción quedó omitida conforme al aplazamiento de Docker.
 
 Los apartados siguientes conservan cortes anteriores; sus recuentos no sustituyen

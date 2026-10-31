@@ -23,6 +23,10 @@ la auditoría filtrada con su versión y umbral. Un hallazgo enlaza directamente
 HIL y al grafo del artículo. Las 11 áreas conocidas están habilitadas; las
 ubicaciones físicas, fuentes documentales y etiquetas humanas requieren cotejo.
 
+Los ensayos digitales identificados por el titular se retiraron con respaldo y
+auditoría. La instalación conserva el archivo histórico, sin operaciones digitales
+ni aperturas activadas. Los saldos documentales no acreditan conteos físicos actuales.
+
 ## Inicio rápido
 
 Con PostgreSQL y dependencias preparados, ejecutar desde la raíz:
