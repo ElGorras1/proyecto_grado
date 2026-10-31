@@ -13,7 +13,67 @@ beforeEach(() => {
   get.mockImplementation((url: string) => Promise.resolve({ data: url === '/automatizacion/estado' ? { configurada: true, habilitada: true } : url.includes('/seguimiento/') ? detalle : bandeja }))
 })
 function montar() { return mount(RevisionesView, { global: { stubs: { RouterLink: RouterLinkStub } } }) }
+function diferida<T>() {
+  let resolve!: (value: T) => void, reject!: (reason: unknown) => void
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
 describe('Revisiones cotidianas', () => {
+  it.each([false, true])('ignora el resultado tardío de otra revisión (fallo: %s)', async falla => {
+    const pendiente = diferida<{ data: typeof detalle }>()
+    post.mockReturnValue(pendiente.promise)
+    const original = get.getMockImplementation()!
+    get.mockImplementation((url: string) => url.endsWith('/3')
+      ? Promise.resolve({ data: { ...detalle, id: 3, movimiento_id: 100, snapshot: { ...detalle.snapshot, articulo: 'Otro artículo' } } })
+      : url === '/revisiones/pendientes'
+        ? Promise.resolve({ data: { ...bandeja, filas: [...bandeja.filas, { ...bandeja.filas[1], id: 3, articulo: 'Otro artículo' }] } })
+        : original(url))
+    const w = montar(); await flushPromises()
+    await w.findAll('button').filter(b => b.text() === 'Abrir evidencia')[0].trigger('click'); await flushPromises()
+    await w.get('.decision textarea').setValue('Cotejado con el documento original')
+    await w.get('form.decision').trigger('submit')
+    await w.findAll('button').filter(b => b.text() === 'Abrir evidencia')[1].trigger('click'); await flushPromises()
+    if (falla) pendiente.reject({ response: { data: { detail: 'Conflicto del aviso anterior' } } })
+    else pendiente.resolve({ data: { ...detalle, revision_numero: 1 } })
+    await flushPromises()
+    expect(w.get('.detalle h2').text()).toContain('Otro artículo · movimiento #100')
+    expect(w.text()).not.toContain('Revisión registrada')
+    expect(w.text()).not.toContain('Conflicto del aviso anterior')
+    w.unmount()
+  })
+  it('no consulta de nuevo si se abandona la pantalla durante un guardado', async () => {
+    const pendiente = diferida<{ data: typeof detalle }>(); post.mockReturnValue(pendiente.promise)
+    const w = montar(); await flushPromises()
+    await w.findAll('button').find(b => b.text() === 'Abrir evidencia')!.trigger('click'); await flushPromises()
+    await w.get('.decision textarea').setValue('Cotejado con el documento original')
+    await w.get('form.decision').trigger('submit')
+    w.unmount(); const consultas = get.mock.calls.length
+    pendiente.resolve({ data: { ...detalle, revision_numero: 1 } }); await flushPromises()
+    expect(get.mock.calls).toHaveLength(consultas)
+  })
+  it('vuelve a la última página disponible cuando se resuelve el último aviso de otra página', async () => {
+    const original = get.getMockImplementation()!
+    get.mockImplementation((url: string, opciones?: { params: { pagina: number } }) => url === '/revisiones/pendientes'
+      ? Promise.resolve({ data: { ...bandeja, total: 30, pagina: opciones!.params.pagina, filas: opciones!.params.pagina === 1 ? bandeja.filas : [] } })
+      : original(url))
+    const w = montar(); await flushPromises()
+    // La lista puede reducirse mientras el usuario permanece en una página posterior.
+    get.mockResolvedValueOnce({ data: { ...bandeja, total: 61 } })
+    await w.findAll('button').find(b => b.text() === 'Actualizar pendientes')!.trigger('click'); await flushPromises()
+    await w.findAll('button').find(b => b.text() === 'Siguiente')!.trigger('click'); await flushPromises()
+    expect(get).toHaveBeenLastCalledWith('/revisiones/pendientes', expect.objectContaining({ params: expect.objectContaining({ pagina: 1 }) }))
+    expect(w.text()).toContain('Página 1 de 1')
+    w.unmount()
+  })
+  it('cierra la evidencia anterior al aplicar otro filtro', async () => {
+    const w = montar(); await flushPromises()
+    await w.findAll('button').find(b => b.text() === 'Abrir evidencia')!.trigger('click'); await flushPromises()
+    expect(w.find('.detalle').exists()).toBe(true)
+    await w.get('[aria-label="Artículo de la revisión"]').setValue('Otro libro')
+    await w.get('form.filtros').trigger('submit'); await flushPromises()
+    expect(w.find('.detalle').exists()).toBe(false)
+    w.unmount()
+  })
   it('reúne avisos con su origen y evidencia, sin solicitar entrenamientos', async () => {
     const w = montar(); await flushPromises()
     expect(w.text()).toContain('Revisión documental'); expect(w.text()).toContain('Análisis automático')

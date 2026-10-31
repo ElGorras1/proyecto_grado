@@ -104,16 +104,9 @@ const documento = ref(''),
 const motivosReapertura = ref<Record<number, string>>({})
 const paginaStock = ref(1),
   paginaEventos = ref(1)
-const stock = computed(
-  () =>
-    informe.value?.inventario_actual.slice((paginaStock.value - 1) * 30, paginaStock.value * 30) ??
-    [],
-)
-const eventos = computed(
-  () =>
-    informe.value?.movimientos.slice((paginaEventos.value - 1) * 30, paginaEventos.value * 30) ??
-    [],
-)
+function fueraDePagina(indice: number, pagina: number) {
+  return indice < (pagina - 1) * 30 || indice >= pagina * 30
+}
 const hayInventarioActivado = computed(() => informe.value?.inventario_actual.some(a => a.operativo) ?? false)
 const historicoGestion = computed(
   () =>
@@ -296,6 +289,7 @@ onMounted(cargar)
       {{ informe.gestion }}.
     </p>
     <template v-if="informe">
+      <p>Generado: {{ fecha(informe.generado_en) }} · Gestión documental consultada: {{ informe.gestion }}.</p>
       <section class="panel">
         <h2>Documentos históricos de {{ informe.gestion }}</h2>
         <p>
@@ -333,7 +327,7 @@ onMounted(cargar)
           {{ informe.resumen_periodo.salidas_y_ajustes }} salidas y ajustes negativos ·
           {{ informe.resumen_periodo.trasladado }} unidades trasladadas.
         </p>
-        <p v-if="!eventos.length">
+        <p v-if="!informe.movimientos.length">
           No hay registros digitales de esta gestión dentro del inventario activado.
         </p>
         <div v-else class="tabla">
@@ -348,7 +342,7 @@ onMounted(cargar)
               </tr>
             </thead>
             <tbody>
-              <tr v-for="e in eventos" :key="`${e.clase}:${e.id}`">
+              <tr v-for="(e, indice) in informe.movimientos" :key="`${e.clase}:${e.id}`" :class="{ 'fuera-de-pagina': fueraDePagina(indice, paginaEventos) }">
                 <td>
                   {{ e.articulo }}<small>{{ e.clase }} #{{ e.id }}</small>
                 </td>
@@ -360,7 +354,7 @@ onMounted(cargar)
             </tbody>
           </table>
         </div>
-        <div v-if="eventos.length" class="paginacion">
+        <div v-if="informe.movimientos.length" class="paginacion">
           <button :disabled="paginaEventos <= 1" @click="paginaEventos--">Anterior</button
           ><span>Página {{ paginaEventos }} · {{ informe.movimientos.length }} eventos</span
           ><button
@@ -418,7 +412,7 @@ onMounted(cargar)
               </tr>
             </thead>
             <tbody>
-              <tr v-for="a in stock" :key="a.articulo_id">
+              <tr v-for="(a, indice) in informe.inventario_actual" :key="a.articulo_id" :class="{ 'fuera-de-pagina': fueraDePagina(indice, paginaStock) }">
                 <td>
                   {{ a.articulo }}<small>{{ a.codigo }}</small>
                 </td>
@@ -482,6 +476,7 @@ onMounted(cargar)
     </section>
     <section v-if="props.seccion !== 'resumen'" class="panel">
       <h2>Cierres conservados de todas las gestiones</h2>
+      <p v-if="totalCierres > 20">Este historial muestra la página {{ paginaCierres }} de {{ Math.ceil(totalCierres / 20) }}, con {{ cierres.length }} de {{ totalCierres }} cierres. La impresión incluye únicamente esta página del historial.</p>
       <p v-if="!cierres.length">Todavía no hay cierres anuales guardados.</p>
       <article v-for="c in cierres" :key="c.id">
         <h3>{{ c.gestion }} · versión {{ c.version }} · {{ c.estado }}</h3>
@@ -643,18 +638,70 @@ article {
     font-size: 1.4rem;
   }
 }
+.fuera-de-pagina {
+  display: none;
+}
 @media print {
+  :global(body) {
+    background: white;
+  }
   button,
   .cierre-form,
   .exportacion-avanzada,
-  .filtros {
-    display: none;
+  .filtros,
+  .paginacion {
+    display: none !important;
   }
   .gestion {
     max-width: none;
+    padding: 0;
+    font-size: 10pt;
+    background: white;
+  }
+  header a {
+    display: none;
+  }
+  h1 {
+    font-size: 18pt;
+  }
+  h2 {
+    font-size: 12pt;
+    break-after: avoid;
   }
   .panel {
+    break-inside: auto;
+    padding: .5rem 0;
+    margin: .5rem 0;
+    border: none;
+    border-radius: 0;
+  }
+  .tabla {
+    overflow: visible;
+  }
+  thead {
+    display: table-header-group;
+  }
+  table {
+    table-layout: fixed;
+    border-radius: 0 !important;
+  }
+  th,
+  td {
+    padding: 5pt !important;
+    font-size: 9pt !important;
+    overflow-wrap: anywhere;
+  }
+  th:first-child {
+    width: 36%;
+  }
+  th:nth-child(3) {
+    width: 22%;
+  }
+  tr {
     break-inside: avoid;
+  }
+  tr.fuera-de-pagina {
+    display: table-row;
   }
 }
 </style>

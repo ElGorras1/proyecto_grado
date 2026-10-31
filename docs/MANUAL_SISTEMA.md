@@ -32,6 +32,19 @@ disponible hasta 2025. Se puede seleccionar otra gestión u origen y pulsar
 consulta anterior y muestran un aviso. El informe institucional comienza en 2025,
 conservando por separado saldos actuales, documentos históricos y registros digitales.
 
+En Resumen, «Imprimir o guardar PDF» incluye todos los artículos y eventos de la
+consulta, aunque en pantalla se muestren en páginas de 30. La impresión repite los
+encabezados de las tablas e indica cuándo se generó el informe y qué gestión
+documental se consultó. Después de imprimir se conserva la página de pantalla.
+En Balance/cierre, el historial de cierres sigue paginado; si hay varias páginas,
+un aviso indica qué parte se incluye en la impresión. Cada cierre conserva además
+su propia descarga completa en JSON.
+
+Al aplicar otros filtros en Revisiones y alertas se cierra la evidencia anterior.
+Un guardado pendiente no sustituye el detalle de otro aviso abierto después. Si
+se resuelve el último aviso de una página y esta deja de existir, la bandeja vuelve
+a la última página disponible.
+
 En Analítica histórica, «Descargar auditoría filtrada CSV» incluye todas las
 filas de la consulta aplicada, aunque ocupen varias páginas. Antes de descargar,
 aplicar cualquier cambio de filtros. El archivo conserva versión, huella, umbral,

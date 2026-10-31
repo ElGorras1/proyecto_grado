@@ -29,6 +29,7 @@ function fallo(e: unknown) { const d = (e as { response?: { data?: { detail?: un
 async function cargar(pagina = 1, nuevos = false) {
   const turno = ++consulta
   const f = nuevos ? { ...filtros.value } : { ...aplicados.value }
+  if (nuevos) { detalle.value = null; consultaDetalle++; mensaje.value = '' }
   cargando.value = true; error.value = ''
   try {
     const { data } = await api.get<Bandeja>('/revisiones/pendientes', { params: {
@@ -37,12 +38,14 @@ async function cargar(pagina = 1, nuevos = false) {
     } })
     if (turno !== consulta) return
     datos.value = data; aplicados.value = f
+    const ultimaPagina = Math.max(1, Math.ceil(data.total / data.limite))
+    if (data.pagina > ultimaPagina) await cargar(ultimaPagina)
   } catch (e) { if (turno === consulta) error.value = fallo(e) }
   finally { if (turno === consulta) cargando.value = false }
 }
 async function abrir(id: number) {
   const turno = ++consultaDetalle
-  detalle.value = null; error.value = ''; fotoError.value = false
+  detalle.value = null; error.value = ''; mensaje.value = ''; fotoError.value = false
   try {
     const { data } = await api.get<Seguimiento>('/automatizacion/seguimiento/' + id)
     if (turno !== consultaDetalle) return
@@ -51,14 +54,19 @@ async function abrir(id: number) {
 }
 async function guardar() {
   if (!detalle.value || guardando.value || !puedeRevisar.value || detalle.value.datos_cambiaron) return
+  const turnoDetalle = consultaDetalle, turnoLista = consulta
+  const actual = detalle.value
   guardando.value = true; error.value = ''; mensaje.value = ''
   try {
-    const { data } = await api.post<Seguimiento>(`/automatizacion/seguimiento/${detalle.value.id}/revision`, { ...revision.value, motivo: revision.value.motivo.trim(), revision_esperada: detalle.value.revision_numero })
-    detalle.value = data
-    mensaje.value = 'Revisión registrada. Las cantidades y el documento original se conservan.'
-    await cargar(datos.value?.pagina ?? 1)
-  } catch (e) { error.value = fallo(e) }
-  finally { guardando.value = false }
+    const { data } = await api.post<Seguimiento>(`/automatizacion/seguimiento/${actual.id}/revision`, { ...revision.value, motivo: revision.value.motivo.trim(), revision_esperada: actual.revision_numero })
+    if (desmontado) return
+    if (turnoDetalle === consultaDetalle) {
+      detalle.value = data
+      mensaje.value = 'Revisión registrada. Las cantidades y el documento original se conservan.'
+    }
+    if (turnoLista === consulta) await cargar(datos.value?.pagina ?? 1)
+  } catch (e) { if (!desmontado && turnoDetalle === consultaDetalle) error.value = fallo(e) }
+  finally { if (!desmontado) guardando.value = false }
 }
 onMounted(async () => {
   await Promise.all([cargar(1, true), api.get('/automatizacion/estado').then(r => { if (!desmontado) estadoAutomatico.value = r.data }).catch(() => {})])

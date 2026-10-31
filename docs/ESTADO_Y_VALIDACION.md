@@ -15,9 +15,21 @@ visible del resumen; JSON queda como exportación avanzada. Los movimientos y su
 utilizan la referencia documental operativa cuando corresponde, sin confundirla con
 el campo de referencia histórico.
 
+La comprobación de entrega corrigió una omisión de impresión: el resumen incluye
+ahora todas las filas de artículos y eventos, no solo las 30 visibles. Se mantiene
+la paginación en pantalla y se repiten los encabezados al imprimir. El PDF de ensayo
+incluyó los **398 artículos**, con sus 398 códigos comprobados, en 28 páginas A4;
+la revisión visual se contrastó también con PDFium. Administrador, Auditor y
+Operador conservaron su segunda página tras imprimir, sin escrituras ni errores de
+JavaScript/API. El historial de cierres, que conserva su propia paginación, indica
+expresamente el alcance parcial de su impresión cuando hay más de 20 registros.
+
 La bandeja común distingue avisos documentales, resultados del corte y controles
 operativos. Los avisos HIL categorizados no se repiten por defecto; se pueden incluir
 expresamente sin borrar sus marcas. Un aviso abre el artículo o resultado exacto.
+Una respuesta tardía de guardado no sustituye otro aviso abierto después ni provoca
+consultas tras abandonar la pantalla. Al aplicar filtros se cierra el detalle
+anterior y una página que queda vacía se ajusta a la última disponible.
 Al cambiar entre Kárdex y operaciones se conserva el artículo. Versiones, parámetros,
 estudios y el modelo digital sin datos quedan fuera de los accesos cotidianos.
 
@@ -45,8 +57,10 @@ reentrenar ni sustituir las 8.367 puntuaciones y 359 avisos originales. La bande
 actual tiene 356 avisos del modelo pendientes; tres ya tenían revisiones que los
 excluyen de la lista diaria. Los avisos originales no se eliminaron.
 
-Verificación local: **431 aprobadas y cuatro omitidas en SQLite**, **224 aprobadas
-en PostgreSQL**, **148 en interfaz**, tipos, compilación y análisis estático correctos.
+Verificación del servidor conservada del cierre anterior: **431 aprobadas y cuatro
+omitidas en SQLite**, **224 aprobadas en PostgreSQL**. La comprobación de entrega,
+que solo modifica interfaz y documentación, aprobó **154 pruebas de interfaz**,
+tipos, compilación y análisis estático.
 No sumar suites solapadas. El recorrido real de navegador comprobó tres roles,
 128 consultas de lectura, impresión de la vista sin navegación, filtros compartidos,
 artículo compartido, evidencias y anchos 390/320 sin errores de JavaScript/API,
@@ -56,6 +70,9 @@ Respaldo previo restaurado: backend/backups/respaldo_20261031T223246232071Z/.
 Respaldo posterior restaurado: backend/backups/respaldo_20261031T224645297054Z/.
 Piloto final: backend/backups/piloto_20261031T224034251620Z/.
 Expediente privado: outputs/simplificacion_automatizacion_20261031/.
+Comprobación posterior de impresión y revisiones: outputs/revision_entrega_20261031/.
+Esta última volvió a verificar registros previos, 927 archivos, 49 tablas,
+8.367 puntuaciones y 359 avisos originales, cuatro seguimientos y 356 avisos pendientes.
 La interfaz local sigue en localhost:5173 y utiliza la API actualizada en 127.0.0.1:8011.
 La configuración local de conexión se conserva fuera de Git.
 

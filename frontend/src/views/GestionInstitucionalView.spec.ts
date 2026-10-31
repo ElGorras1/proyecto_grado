@@ -55,6 +55,31 @@ function montar() {
   return mount(GestionInstitucionalView, { global: { stubs: { RouterLink: RouterLinkStub } } })
 }
 describe('Gestión institucional', () => {
+  it('conserva todos los artículos y eventos para imprimir, con páginas de 30 en pantalla', async () => {
+    get.mockResolvedValue({ data: {
+      ...informe,
+      resumen_periodo: { ...informe.resumen_periodo, eventos: 65 },
+      movimientos: Array.from({ length: 65 }, (_, i) => ({ id: i + 1, clase: 'INGRESO', articulo: `Evento ${i + 1}`, fecha_registro: '2025-01-01T12:00:00Z', ingreso: 1, salida: 0, cantidad_transferida: 0 })),
+      inventario_actual: Array.from({ length: 65 }, (_, i) => ({ articulo_id: i + 1, articulo: `Artículo ${i + 1}`, codigo: `A${i + 1}`, saldo_actual: 1, origen: 'BASE_DOCUMENTAL_PROVISIONAL', operativo: false, distribucion: { sin_ubicacion_confirmada: 0, en_custodia_externa: 0 } })),
+    } })
+    const w = mount(GestionInstitucionalView, { props: { seccion: 'resumen' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    for (const tabla of w.findAll('table')) {
+      expect(tabla.findAll('tbody tr')).toHaveLength(65)
+      expect(tabla.findAll('tbody tr:not(.fuera-de-pagina)')).toHaveLength(30)
+    }
+    for (const control of w.findAll('.paginacion')) {
+      await control.findAll('button').find(b => b.text() === 'Siguiente')!.trigger('click')
+    }
+    for (const tabla of w.findAll('table')) {
+      expect(tabla.findAll('tbody tr:not(.fuera-de-pagina)')[0].text()).toContain('31')
+      expect(tabla.findAll('tbody tr')).toHaveLength(65)
+    }
+    const imprimir = vi.spyOn(window, 'print').mockImplementation(() => {})
+    await w.findAll('button').find(b => b.text() === 'Imprimir o guardar PDF')!.trigger('click')
+    expect(imprimir).toHaveBeenCalledOnce()
+    imprimir.mockRestore(); w.unmount()
+  })
   it('comparte la gestión consultada desde el resumen con los otros apartados', async () => {
     ruta.gestion = '2025'
     const w = mount(GestionInstitucionalView, { props: { seccion: 'resumen' }, global: { stubs: { RouterLink: RouterLinkStub } } })
