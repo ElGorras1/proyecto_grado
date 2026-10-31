@@ -1,5 +1,7 @@
 # Backend
 backend/.env
+/.env.production
+/.env.production.*
 backend/__pycache__/
 backend/**/__pycache__/
 backend/.venv/

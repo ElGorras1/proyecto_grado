@@ -112,7 +112,7 @@ const filtrosPendientes = computed(
     }) !== JSON.stringify(aplicados.value),
 )
 const porcentaje = ref(5)
-const modo = ref<'RETROSPECTIVO' | 'TEMPORAL'>('RETROSPECTIVO')
+const modo = ref<'RETROSPECTIVO' | 'TEMPORAL' | 'POR_ARTICULO'>('POR_ARTICULO')
 const anioTemporal = ref(new Date().getFullYear() - 1)
 const planTemporal = ref<{
   suficiente: boolean
@@ -437,9 +437,11 @@ onUnmounted(() => {
           >Tipo de evaluación
           <select v-model="modo" @change="prepararTemporal">
             <option value="RETROSPECTIVO">Retrospectiva por lotes</option>
+            <option value="POR_ARTICULO">Separación por artículo y documentos relacionados</option>
             <option value="TEMPORAL">Comparación con un año reservado</option>
           </select>
         </label>
+        <p v-if="modo === 'POR_ARTICULO'">Cada artículo, sus lotes y las fotografías compartidas permanecen en un solo conjunto. La evaluación representa artículos no vistos y utiliza referencias globales cuando falta contexto propio; no demuestra predicción de operaciones futuras.</p>
         <label v-if="modo === 'TEMPORAL'"
           >Año reservado
           <input

@@ -1,0 +1,5 @@
+# Solo dependencias de ejecución; Python 3.11/3.12.
+# Regenerar con uv pip compile --universal --python-version 3.11 --generate-hashes.
+-r base.txt
+-r analytics.txt
+-r ocr.txt

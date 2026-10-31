@@ -33,8 +33,9 @@ def instante(fecha: datetime | None, fecha_documental=None):
 
 def celda_texto(valor):
     """Evita que un texto institucional sea interpretado como fórmula al abrir el CSV."""
-    texto = str(valor or "")
-    return "'" + texto if texto.lstrip().startswith(("=", "+", "-", "@")) else texto
+    texto = "" if valor is None else str(valor)
+    peligroso = texto.startswith(("\t", "\r", "\n")) or texto.lstrip().startswith(("=", "+", "-", "@"))
+    return "'" + texto if peligroso else texto
 
 
 @router.get("/{articulo_id}/kardex-digital")

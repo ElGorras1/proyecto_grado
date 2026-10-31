@@ -20,6 +20,7 @@ from uuid import UUID
 from sqlalchemy import create_engine, inspect, text
 
 from app.db.session import engine
+from app.core.postgres_tools import postgres_tool
 from scripts.preparar_analitica import digest_tablas
 from scripts.verificar_respaldo_actual import crear_zip, sha256_archivo, verificar_zip
 
@@ -113,10 +114,10 @@ def nueva_copia(carpeta, marca, prefijo="activos_recuperacion_qa_"):
             conn.execute(text(f'CREATE DATABASE "{nombre}"'))
     finally:
         admin.dispose()
-    entorno, conexion, pg = parametros()
+    entorno, conexion, _ = parametros()
     subprocess.run(
         [
-            str(pg / "pg_restore.exe"),
+            str(postgres_tool("pg_restore")),
             *conexion,
             "--no-owner",
             "--exit-on-error",
@@ -141,7 +142,7 @@ def parametros():
     entorno = os.environ.copy()
     if url.password:
         entorno["PGPASSWORD"] = url.password
-    pg = Path(os.environ.get("POSTGRES_BIN", r"C:\Program Files\PostgreSQL\18\bin"))
+    pg = postgres_tool("pg_dump").parent
     conexion = [
         "-h",
         url.host or "localhost",
@@ -156,7 +157,7 @@ def parametros():
 def respaldar(marca):
     carpeta = BACKEND / "backups" / ("respaldo_" + marca)
     carpeta.mkdir(parents=True, exist_ok=False)
-    entorno, conexion, pg = parametros()
+    entorno, conexion, _ = parametros()
     # pg_dump usa el MISMO snapshot PostgreSQL que los conteos y hashes.
     with engine.connect().execution_options(isolation_level="REPEATABLE READ") as conn:
         conn.execute(text("SET TRANSACTION READ ONLY"))
@@ -177,7 +178,7 @@ def respaldar(marca):
         snapshot = conn.execute(text("SELECT pg_export_snapshot()")).scalar_one()
         subprocess.run(
             [
-                str(pg / "pg_dump.exe"),
+                str(postgres_tool("pg_dump")),
                 *conexion,
                 "-Fc",
                 "--snapshot",

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 from pathlib import Path
+from sqlalchemy.orm import defer
 
 from app.models.cobertura import CoberturaArticulo
 from app.models.kardex import MovimientoKardex
@@ -80,7 +81,9 @@ class FuenteCierre:
 
 def fuentes_cierre(db, articulo_id=None):
     m = MovimientoKardex
-    consulta = db.query(m).filter(m.lote_id.isnot(None))
+    # La huella y la base utilizan campos vigentes. El JSON de la primera
+    # extracción permanece almacenado y se lee cuando se consulta su evidencia.
+    consulta = db.query(m).options(defer(m.datos_originales)).filter(m.lote_id.isnot(None))
     revisiones = db.query(CoberturaArticulo)
     if articulo_id is not None:
         consulta = consulta.filter(m.articulo_id == articulo_id)

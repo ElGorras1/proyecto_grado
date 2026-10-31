@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
@@ -19,6 +21,29 @@ from app.schemas.usuario import (
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
 
 
+def validar_rol(rol):
+    if rol is None:
+        raise HTTPException(400, "El rol especificado no existe")
+    if rol.estado != "activo" or rol.nombre not in ("Administrador", "Operador", "Auditor"):
+        raise HTTPException(409, "Selecciona un rol activo con permisos para este sistema")
+
+
+def guardar_con_auditoria(db, usuario, **evento):
+    """La cuenta y su constancia se confirman o revierten juntas."""
+    try:
+        db.flush()
+        registrar_evento_auditoria(db, recurso="usuario", recurso_id=usuario.id,
+                                  resultado="exito", commit=False, **evento)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Los datos de la cuenta entran en conflicto; revisa el email") from None
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(usuario)
+
+
 def bloquear_administracion(db: Session, actual: Usuario):
     # Serializa bajas/cambios de rol: dos administradores no pueden retirarse
     # mutuamente los permisos y dejar el sistema sin administración.
@@ -29,6 +54,7 @@ def bloquear_administracion(db: Session, actual: Usuario):
     db.expire(actual, ["rol"])
     if (
         actual.estado != "activo"
+        or actual.rol is None
         or actual.rol.nombre != "Administrador"
         or actual.rol.estado != "activo"
     ):
@@ -92,7 +118,8 @@ def crear_usuario(
     current_user: Usuario = Depends(require_roles("Administrador")),
 ):
     """Crea un nuevo usuario en el sistema."""
-    existente = db.query(Usuario).filter(Usuario.email == payload.email).first()
+    bloquear_administracion(db, current_user)
+    existente = db.query(Usuario).filter(func.lower(Usuario.email) == str(payload.email).lower()).first()
     if existente:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -100,11 +127,7 @@ def crear_usuario(
         )
 
     rol = db.query(Rol).filter(Rol.id == payload.rol_id).first()
-    if not rol:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El rol especificado no existe",
-        )
+    validar_rol(rol)
 
     if payload.area_id is not None:
         area = db.query(Area).filter(Area.id == payload.area_id).populate_existing().with_for_update(read=True).first()
@@ -123,17 +146,12 @@ def crear_usuario(
         estado="activo",
     )
     db.add(nuevo_usuario)
-    db.commit()
-    db.refresh(nuevo_usuario)
 
     ip = request.client.host if request.client else None
-    registrar_evento_auditoria(
-        db,
+    guardar_con_auditoria(
+        db, nuevo_usuario,
         usuario_id=current_user.id,
         accion="crear_usuario",
-        recurso="usuario",
-        recurso_id=nuevo_usuario.id,
-        resultado="exito",
         ip_origen=ip,
         detalle={"email": nuevo_usuario.email, "rol_id": nuevo_usuario.rol_id},
     )
@@ -160,7 +178,7 @@ def actualizar_usuario(
 
     if payload.email is not None and payload.email != usuario.email:
         existente = (
-            db.query(Usuario).filter(Usuario.email == payload.email, Usuario.id != id).first()
+            db.query(Usuario).filter(func.lower(Usuario.email) == str(payload.email).lower(), Usuario.id != id).first()
         )
         if existente:
             raise HTTPException(
@@ -171,11 +189,7 @@ def actualizar_usuario(
 
     if payload.rol_id is not None:
         rol = db.query(Rol).filter(Rol.id == payload.rol_id).first()
-        if not rol:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El rol especificado no existe",
-            )
+        validar_rol(rol)
         if usuario.id == current_user.id and rol.nombre != "Administrador":
             raise HTTPException(400, "No puede quitar el rol Administrador de su propia cuenta")
         usuario.rol_id = payload.rol_id
@@ -193,17 +207,11 @@ def actualizar_usuario(
     if payload.nombre is not None:
         usuario.nombre = payload.nombre
 
-    db.commit()
-    db.refresh(usuario)
-
     ip = request.client.host if request.client else None
-    registrar_evento_auditoria(
-        db,
+    guardar_con_auditoria(
+        db, usuario,
         usuario_id=current_user.id,
         accion="editar_usuario",
-        recurso="usuario",
-        recurso_id=usuario.id,
-        resultado="exito",
         ip_origen=ip,
         detalle={"email": usuario.email, "rol_id": usuario.rol_id},
     )
@@ -249,17 +257,12 @@ def desactivar_usuario(
             )
 
     usuario.estado = "baja"
-    db.commit()
-    db.refresh(usuario)
 
     ip = request.client.host if request.client else None
-    registrar_evento_auditoria(
-        db,
+    guardar_con_auditoria(
+        db, usuario,
         usuario_id=current_user.id,
         accion="desactivar_usuario",
-        recurso="usuario",
-        recurso_id=usuario.id,
-        resultado="exito",
         ip_origen=ip,
         detalle={"usuario_desactivado": usuario.email},
     )
@@ -275,6 +278,7 @@ def reactivar_usuario(
     current_user: Usuario = Depends(require_roles("Administrador")),
 ):
     """Reactiva un usuario que estaba en estado baja."""
+    bloquear_administracion(db, current_user)
     usuario = db.query(Usuario).filter(Usuario.id == id).first()
     if not usuario:
         raise HTTPException(
@@ -282,22 +286,18 @@ def reactivar_usuario(
             detail="Usuario no encontrado",
         )
 
+    validar_rol(usuario.rol)
     if usuario.area_id is not None:
         area = db.query(Area).filter_by(id=usuario.area_id).populate_existing().with_for_update(read=True).first()
         if area is None or area.estado != "activo":
             raise HTTPException(409, "Reasigna la cuenta a un área activa o retira su adscripción antes de reactivarla")
     usuario.estado = "activo"
-    db.commit()
-    db.refresh(usuario)
 
     ip = request.client.host if request.client else None
-    registrar_evento_auditoria(
-        db,
+    guardar_con_auditoria(
+        db, usuario,
         usuario_id=current_user.id,
         accion="reactivar_usuario",
-        recurso="usuario",
-        recurso_id=usuario.id,
-        resultado="exito",
         ip_origen=ip,
         detalle={"usuario_reactivado": usuario.email},
     )
@@ -314,6 +314,7 @@ def resetear_password(
     current_user: Usuario = Depends(require_roles("Administrador")),
 ):
     """Restablece la contraseña de un usuario."""
+    bloquear_administracion(db, current_user)
     usuario = db.query(Usuario).filter(Usuario.id == id).first()
     if not usuario:
         raise HTTPException(
@@ -322,16 +323,12 @@ def resetear_password(
         )
 
     usuario.password_hash = hash_password(payload.password_nuevo)
-    db.commit()
 
     ip = request.client.host if request.client else None
-    registrar_evento_auditoria(
-        db,
+    guardar_con_auditoria(
+        db, usuario,
         usuario_id=current_user.id,
         accion="resetear_password",
-        recurso="usuario",
-        recurso_id=usuario.id,
-        resultado="exito",
         ip_origen=ip,
         detalle={"email": usuario.email},
     )

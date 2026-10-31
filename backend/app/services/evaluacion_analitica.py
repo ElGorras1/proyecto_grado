@@ -280,6 +280,15 @@ def diagnosticar(modelo, resultados):
             "calibracion" if int(f["fecha"][:4]) == cal else
             "evaluacion" if int(f["fecha"][:4]) == cal + 1 else "fuera_de_periodo"
         ) for f in filas}
+    elif modelo.configuracion.get('modo') == 'POR_ARTICULO':
+        from app.services.particiones_articulo import auditar_particiones, reconstruir_asignacion
+        try:
+            control = auditar_particiones(filas, [por_id[f['id']].particion if f['id'] in por_id else 'entrenamiento' for f in filas])
+        except ValueError:
+            control = {'sin_cruces': False}
+        check('articulos', 'Artículos, lotes y fotografías sin cruces', control['sin_cruces'],
+              'Separación de componentes relacionados; las filas reservadas pertenecen a artículos no vistos.')
+        asignacion = reconstruir_asignacion(filas, modelo.configuracion['semilla'])
     else:
         asignacion = _asignacion(filas, modelo.configuracion["semilla"])
     cambiados = [i for i in ids if i in por_id and por_id[i].particion != asignacion.get(i)]
@@ -521,15 +530,19 @@ def reproducir_artefacto(modelo, resultados, directorio):
         f"error máximo {max_error:.3g}. Sin fit.",
     )
     fuentes = artefacto.get("fuentes", {})
-    fuentes_ok = set(fuentes) == {
+    requeridas = {
         "trabajador_analitica.py",
         "isolation_historico.py",
         "datos_analitica.py",
-    } and all(isinstance(v, str) and v.strip() for v in fuentes.values())
+    }
+    if modelo.configuracion.get('modo') == 'POR_ARTICULO':
+        requeridas.add('particiones_articulo.py')
+    fuentes_ok = requeridas <= set(fuentes) <= requeridas | {'particiones_articulo.py'} and all(
+        isinstance(v, str) and v.strip() for v in fuentes.values())
     cambiadas = [
         nombre
         for nombre, texto in fuentes.items()
-        if nombre in ("trabajador_analitica.py", "isolation_historico.py", "datos_analitica.py")
+        if nombre in requeridas | {'particiones_articulo.py'}
         if not Path(__file__).with_name(nombre).is_file()
         or Path(__file__).with_name(nombre).read_text(encoding="utf-8-sig") != texto
     ]

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.usuario import Usuario
@@ -7,7 +8,7 @@ from app.core.security import verify_password
 
 
 def get_usuario_by_email(db: Session, email: str) -> Usuario | None:
-    return db.query(Usuario).filter(Usuario.email == email).first()
+    return db.query(Usuario).filter(func.lower(Usuario.email) == email.strip().lower()).first()
 
 
 def get_usuario_by_id(db: Session, usuario_id: int) -> Usuario | None:

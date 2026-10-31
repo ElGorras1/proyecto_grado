@@ -1,4 +1,5 @@
 # === Núcleo de la API (necesario desde el día 1) ===
+-c security.txt
 fastapi==0.146.0
 starlette==1.9.0
 uvicorn[standard]==0.30.6
@@ -19,6 +20,8 @@ alembic==1.13.2
 slowapi==0.1.9
 
 # === IA y Procesamiento Kardex ===
-google-genai>=0.1.1
-thefuzz>=0.22.1
-rapidfuzz>=3.0.0
+google-genai==1.2.0
+thefuzz==0.22.1
+rapidfuzz==3.14.6
+# ZoneInfo debe funcionar también en instalaciones limpias de Windows/contenedores.
+tzdata==2026.3

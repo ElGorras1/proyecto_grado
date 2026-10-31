@@ -1,0 +1,101 @@
+# Pila independiente del compose de desarrollo y de PostgreSQL instalado en Windows.
+name: activos_produccion
+
+x-api: &api
+  image: activos-backend:local
+  build:
+    context: ./backend
+    target: production
+  environment: &api-env
+    POSTGRES_HOST: db
+    POSTGRES_DB: activos_db
+    POSTGRES_USER: activos_app
+    POSTGRES_PASSWORD: ${APP_DB_PASSWORD:?Configura APP_DB_PASSWORD}
+    ENVIRONMENT: production
+    JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Configura JWT_SECRET_KEY}
+    BACKEND_CORS_ORIGINS: '["${PUBLIC_ORIGIN:?Configura PUBLIC_ORIGIN con HTTPS}"]'
+    GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  volumes:
+    - evidencias:/app/storage
+    - modelos_historicos:/app/.analytics
+    - modelos_operativos:/app/.analytics_operativa
+    - respaldos:/app/backups
+    - registros:/app/logs
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  db:
+    image: postgres:18-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: activos_owner
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:?Configura DB_OWNER_PASSWORD}
+      POSTGRES_DB: activos_db
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Configura APP_DB_PASSWORD}
+    volumes:
+      - datos_pg18:/var/lib/postgresql
+      - ./backend/migrations/esquema_n49.sql:/docker-entrypoint-initdb.d/01_baseline.sql:ro
+      - ./backend/init_db/02_stamp_baseline.sql:/docker-entrypoint-initdb.d/02_stamp_baseline.sql:ro
+      - ./backend/init_db/03_app_role.sh:/docker-entrypoint-initdb.d/03_app_role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U activos_owner -d activos_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  migrate:
+    <<: *api
+    restart: "no"
+    environment:
+      <<: *api-env
+      POSTGRES_USER: activos_owner
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:?Configura DB_OWNER_PASSWORD}
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backend:
+    <<: *api
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"]
+      interval: 15s
+      timeout: 8s
+      retries: 5
+
+  web:
+    image: activos-frontend:local
+    build:
+      context: ./frontend
+      target: production
+      args:
+        VITE_API_BASE_URL: /api/v1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  datos_pg18:
+  evidencias:
+  modelos_historicos:
+  modelos_operativos:
+  respaldos:
+  registros:

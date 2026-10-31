@@ -54,7 +54,7 @@ def test_reproduccion_independiente_sin_entrenar_ni_escribir(
     monkeypatch.setattr(isolation_historico, "particionar", prohibido)
     assert diagnosticar(j, rs)["estado"] == "CONSISTENTE"
     r = reproducir_artefacto(j, rs, tmp_path)
-    assert r["estado"] == "CONSISTENTE"
+    assert r["estado"] == "CONSISTENTE", [c for c in r["comprobaciones"] if c["estado"] != "OK"]
     assert comprobacion(r, "replay")["estado"] == "OK"
     assert (tmp_path / (j.id + ".joblib")).read_bytes() == contenido
     assert [(r.snapshot, r.contexto, r.score, r.estado_revision) for r in rs] == antes

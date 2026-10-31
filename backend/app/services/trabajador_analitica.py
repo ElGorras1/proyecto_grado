@@ -71,6 +71,7 @@ def ejecutar(db, modelo_id, directorio=None):
                 Path(__file__),
                 Path(__file__).with_name("isolation_historico.py"),
                 Path(__file__).with_name("datos_analitica.py"),
+                Path(__file__).with_name("particiones_articulo.py"),
             )
         }
         joblib.dump(

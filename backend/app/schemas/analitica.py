@@ -8,7 +8,7 @@ class EntrenamientoHistorico(BaseModel):
     arboles: int = Field(200, ge=100, le=500)
     porcentaje_revision: float = Field(5, ge=1, le=20)
     excluir_articulos: list[int] = Field(default_factory=list, max_length=1000)
-    modo: Literal["RETROSPECTIVO", "TEMPORAL"] = "RETROSPECTIVO"
+    modo: Literal["RETROSPECTIVO", "TEMPORAL", "POR_ARTICULO"] = "RETROSPECTIVO"
     gestion_evaluacion: int | None = Field(default=None, ge=1902, le=9998)
 
     @model_validator(mode="after")

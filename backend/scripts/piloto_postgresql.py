@@ -87,6 +87,10 @@ def main():
         "tests/test_preparacion_inventario.py",
         "tests/test_circuito_piloto.py",
         "tests/test_validacion_independiente.py",
+        "tests/test_particiones_articulo.py",
+        "tests/test_entrega_tecnica.py",
+        "tests/test_revision_funcional.py",
+        "tests/test_documentos_operativos.py",
     ]
     with (destino / "resultado.log").open("w", encoding="utf-8") as log:
         resultado = subprocess.run(

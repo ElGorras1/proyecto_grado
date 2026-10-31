@@ -1,8 +1,42 @@
 # Estado, pruebas y pendientes
 
-Consolidación: 30/10/2026, Bolivia. Datos institucionales comprobados el 29/10;
-interfaz y pruebas generales comprobadas el 30/10. Esta edición de documentación no
-realiza una auditoría nueva de datos. [Inicio](../README.md) · [Manual](MANUAL_SISTEMA.md).
+## Cierre metodológico del 31 de octubre
+
+La herramienta de estudios nuevos se alineó con el capítulo I: NORMAL, ANOMALO e
+INDETERMINADO; criterio documental obligatorio para anomalías; segunda revisión
+registrada para excluir indeterminados persistentes; muestra y denominadores
+explícitos. Conserva sin reinterpretar los estudios versión 1. Admite hasta 5.000
+filas y rechaza superar el marco, sin reducir silenciosamente la muestra.
+La consulta de lectura cuenta 11.859 movimientos documentales con ruta de foto:
+la recomendación técnica se recalcula a 373, pendiente de confirmación institucional.
+
+La auditoría del corte del 20/10 encontró seis artículos entre conjuntos, sin lotes
+ni fotos cruzados. La nueva opción POR_ARTICULO mantiene esos componentes juntos.
+El experimento separado del 31/10 tiene 4.689/2.169/1.509 filas y 214/71/71 artículos,
+cero cruces, umbral 0,6075246749034304 y 60 alertas de evaluación. Las 1.509 filas
+reservadas utilizan referencia global: es generalización a artículos no vistos,
+no superioridad ni validación temporal. No se registró el modelo experimental en
+la instalación ni se sustituyó la versión del 20/10, cuya reproducción sigue CONSISTENTE.
+
+Pruebas actuales: 410 aprobadas y 4 omitidas en servidor SQLite; 116 aprobadas en
+interfaz, con tipos y compilación correctos; 201 en PostgreSQL aislado, sin omisiones.
+No sumar conjuntos solapados. El circuito PostgreSQL conserva tablas, secuencias y
+927 archivos institucionales. Son ensayos técnicos, no un piloto con personal.
+
+Las capturas nuevas de validación utilizan la interfaz compilada con respuestas
+sintéticas, identificadas como QA: no crearon estudios ni etiquetas institucionales.
+La ejecución Docker continúa pospuesta; su trabajo CI requiere una solicitud manual
+explícita y no se inicia con cada publicación. Las métricas humanas, los conteos,
+la aceptación y el diseño temporal suficiente siguen pendientes. El protocolo
+está en [PROTOCOLO_EVALUACION.md](PROTOCOLO_EVALUACION.md); los expedientes privados
+del cierre permanecen en outputs/cierre_capitulo_III_20261031_v2/.
+
+Los apartados siguientes conservan el corte anterior del 30/10 y sus antecedentes.
+
+Actualización técnica: 30/10/2026, Bolivia. Pruebas, dependencias, recuperación e
+integridad comprobadas durante esta revisión; las carpetas con fecha UTC 31/10
+corresponden a la noche del 30/10 en Bolivia. El cotejo institucional de documentos
+y existencias sigue pendiente. [Inicio](../README.md) · [Manual](MANUAL_SISTEMA.md).
 
 ## Estado general
 
@@ -19,8 +53,9 @@ del detector y la entrega de producción siguen pendientes.
 | C04: rectificaciones logísticas | Transferencias, entregas y ventas/retornos corregibles mediante compensaciones; aceptación real pendiente. |
 | C05: inventario y piloto | Fichas de preparación y circuito QA de 14 etapas comprobados; conteos, ubicación y aceptación con personal pendientes. |
 | C06: validación independiente | Estudios, etiquetas separadas y exportación implementados; hay cero estudios y etiquetas reales. |
-| C07: entrega reproducible | Pendiente: dependencias, instalación, configuración, recuperación final y pruebas de despliegue/carga. |
+| C07: entrega reproducible | Avance técnico verificado: dependencias fijadas, entorno limpio, permisos de base y recuperación. Pila de producción preparada; construcción/arranque en Docker, HTTPS y carga pendientes. |
 | Interfaz | Mosaico uniforme aplicado el 30/10, con herramientas y permisos conservados. |
+| Revisión funcional adicional | Corregidos guardado conjunto de cuentas/auditoría, roles inutilizables, correos duplicados por mayúsculas, validaciones de usuario, sesiones nuevas tras restablecer contraseña, errores de OCR y protección CSV. Sin cambios de datos institucionales. |
 
 ## Datos y calidad documental
 
@@ -95,39 +130,79 @@ operaciones ficticias.
 
 | Verificación | Resultado y fecha |
 |---|---|
-| Suite general del servidor | 372 aprobadas y 1 omitida por requerir PostgreSQL; 30/10. |
-| Interfaz | 110 aprobadas; análisis estático y compilación correctos; 30/10. |
-| Piloto PostgreSQL aislado | 160 aprobadas, sin omisiones; 29/10. No sumar a la suite general: cubre pruebas solapadas. |
+| Suite general del servidor | 403 aprobadas y 4 omitidas por requerir PostgreSQL, con Python 3.11 local; 30/10. Las omisiones incluyen las dos pruebas de solicitudes simultáneas y se ejecutan en el piloto PostgreSQL. |
+| Interfaz | 112 aprobadas; análisis estático y compilación correctos; 30/10. Incluye adjuntos operativos en la ficha. La administración carga todas las páginas de usuarios. |
+| Piloto PostgreSQL aislado | 194 aprobadas, sin omisiones, con circuito de 14 etapas; 30/10. Incluye migración y permisos de adjuntos, correcciones funcionales y dos solicitudes simultáneas con conexiones independientes: sin sobregiro y sin duplicación del mismo envío. No sumar a la suite general: cubre pruebas solapadas. |
 | Revisión del rediseño con datos reales | 28 comprobaciones: tres roles, inicio/inventario/ficha/Kárdex/accesos y anchos 1440, 768, 390 y 320; 30/10. Cero errores JS/API, desbordamientos de página o escrituras. |
 | Conservación de lógica de interfaz | 154 enlaces originales de formularios/acciones conservados entre ficha y catálogo histórico; 30/10. |
-| Base y recuperación | Respaldos restaurados y reconciliados; migración aplicada `u16a75c1d380`; comprobación documental del 29/10. |
+| Base y recuperación | Respaldo previo restaurado y reconciliado; ampliación de adjuntos aplicada `v27b86d2e491`; 30/10. |
+| Integridad durante las correcciones | Las tablas de negocio previas, sus secuencias y 927 archivos privados conservan sus huellas. El esquema ahora tiene 46 tablas: se añadió `documento_operativo` vacío y avanzó la versión Alembic; 30/10. |
+| Instalación nueva y modelos | Entorno limpio Python 3.12 instalado desde el lock con hashes, `pip check` correcto y tres artefactos joblib existentes cargados sin reentrenar; 30/10. |
+| Producción y automatización | Configuración Compose y estructura del flujo CI comprobadas. El motor Docker local no inició: la construcción y el arranque de contenedores no se acreditan. Las nuevas tareas CI aún no se han ejecutado en GitHub. |
 
-El 29/10 la auditoría del entorno Python reportó 19 avisos en cinco paquetes, con
-18 identificadores distintos: certifi, dnspython, filelock, pypdf y setuptools.
-Npm no reportó vulnerabilidades conocidas. Falta revisar alcance y actualizar o
-retirar dependencias con pruebas de compatibilidad; aquel análisis no demostró la
-explotabilidad de cada aviso. El resultado sin avisos del 18/10 es un antecedente.
+La revisión funcional reprodujo fallos de cuentas/auditoría, validación de roles y
+correos, protección de CSV y errores del lector externo; sus regresiones se
+comprobaron en bases aisladas. Los cambios de contraseña de sesiones nuevas
+invalidan tanto el acceso Bearer como la cookie de fotografías. El análisis de
+las 115 operaciones documentadas solo encontró sin requisito Bearer los inicios
+y cierres de sesión y las dos comprobaciones de salud; las fotografías tienen
+validación propia. Esto complementa las pruebas de permisos, no sustituye una
+auditoría de seguridad independiente.
+
+La auditoría Python inicial del 30/10 reportó 30 avisos en seis paquetes. Se
+actualizaron certifi, dnspython, filelock, pyasn1, pypdf y setuptools; las auditorías
+posteriores del entorno local y del entorno limpio no reportan vulnerabilidades
+conocidas. Las versiones del modelo entrenado se conservaron. Se corrigieron
+además la conexión con contraseñas especiales, su interpolación en Alembic y la
+localización de herramientas de respaldo en Windows/Linux.
+
+En la interfaz se actualizó follow-redirects a 1.16.2. `npm audit --omit=dev` no
+reporta avisos; el análisis completo conserva 18 entradas moderadas propagadas
+desde dos dependencias de herramientas de desarrollo: glob y minimatch. Sus
+correcciones disponibles cambian versiones mayores respecto de los rangos de
+los consumidores instalados; no se impusieron sustituciones incompatibles. Debe
+verificarse una actualización coordinada de esas herramientas antes de cerrar
+C07. No quedan avisos altos ni críticos en el análisis actual. Fuentes:
+[minimatch](https://github.com/advisories/GHSA-g3hv-75wg-m249) y
+[glob](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4). Estas auditorías no prueban
+por sí solas la explotabilidad del sistema ni la ausencia de otras fallas.
 
 Medianas locales del 29/10, con tres lecturas ASGI/PostgreSQL y sin concurrencia:
 catálogo 2,769 s; perfil analítico 4,255 s; informe institucional 5,737 s. No son una
-prueba de carga ni tiempos de extremo a extremo. Los catálogos siguen mostrando
-todos sus artículos; la paginación y simplificación de analítica pueden mejorar el uso.
+prueba de carga ni tiempos de extremo a extremo. En esta revisión se evitó leer el
+JSON original de extracción en consultas que solo necesitan campos vigentes;
+las respuestas de catálogo, corte analítico e informe institucional conservaron
+sus huellas. La medición local tuvo una pausa prolongada y no se utiliza como
+nuevo indicador de rendimiento. Los catálogos siguen mostrando todos sus artículos;
+la paginación y simplificación de analítica pueden mejorar el uso.
 
 ## Orden para terminar
 
-1. **Entrega técnica C07:** revisar dependencias, fijar versión instalable, configurar
-   producción y permisos, restaurar el respaldo final y medir carga/concurrencia.
-2. **Fuentes y áreas:** cotejar cierres/cobertura; resolver o justificar bloqueos,
+1. **Fuentes y áreas:** cotejar cierres/cobertura; resolver o justificar bloqueos,
    inferencias y siglas; aprobar áreas, participantes y alcance de permisos.
-3. **Inventario real C05:** aclarar el artículo de prueba, contar y ubicar existencias,
+2. **Inventario real C05:** aclarar el artículo de prueba, contar y ubicar existencias,
    adjuntar referencias/actas y aceptar el circuito con personal autorizado.
-4. **Evaluación C06:** aprobar protocolo, realizar cotejo y etiquetas independientes,
+3. **Evaluación C06:** aprobar protocolo, realizar cotejo y etiquetas independientes,
    medir resultados y mejorar el diseño temporal. La calidad del OCR original y
    la evaluación académica del grafo requieren mediciones específicas si el alcance las exige.
-5. **Dataset y expediente:** cerrar versión, diccionario, exclusiones, procedencia y
+4. **Dataset y expediente:** cerrar versión, diccionario, exclusiones, procedencia y
    huellas; obtener aprobación institucional y preparar conclusiones de la defensa.
-6. **Modelo operativo:** entrenar y evaluar cuando existan suficientes eventos reales
+5. **Modelo operativo:** entrenar y evaluar cuando existan suficientes eventos reales
    y representativos, si forma parte del alcance acordado.
+6. **Entrega técnica C07:** resolver los avisos restantes de herramientas de desarrollo
+   mediante versiones compatibles y ejecutar la nueva verificación CI. Docker queda
+   pospuesto por decisión del usuario. Para la entrega definitiva siguen pendientes
+   despliegue, HTTPS, red, carga con varios usuarios, recuperación en el servidor
+   definitivo y copia externa. Las pruebas de dos solicitudes simultáneas no sustituyen
+   una prueba de carga.
+
+**Documentos operativos:** ya se pueden cargar y descargar actas/facturas privadas
+por artículo y referencia, con permisos, auditoría y comprobación de integridad.
+Se incorporaron pruebas de acceso, archivo alterado y reversión por fallo de auditoría.
+La paginación y el rendimiento de listados grandes, y la revocación individual de
+sesiones copiadas, son mejoras técnicas diferenciadas de la validación institucional.
+Las sesiones nuevas quedan invalidadas al restablecer su contraseña; las anteriores
+a esta actualización mantienen su vencimiento original.
 
 Se mantienen como mejoras sujetas a necesidad: préstamo a exposición, recepción de
 transferencias en dos pasos, reposición, importación CSV/Excel, notificaciones y
@@ -141,6 +216,30 @@ en `backend/backups/rediseno_mosaico_20261030/`. Los originales sustituidos en e
 consolidación se guardan en `backend/backups/documentacion_consolidada_20261030/`,
 con ZIP y manifiesto SHA-256; también se conserva el archivo histórico del 18/10.
 Estos respaldos y los materiales de `outputs/` son locales y no se publican en Git.
+
+La evidencia de estas correcciones está en
+`backend/backups/c07_entrega_tecnica_20261030/`; el piloto final se conserva en
+`backend/backups/piloto_20261031T002302756524Z/` y el respaldo restaurado en
+`backend/backups/respaldo_20261031T002431177314Z/`. Los entornos y paquetes previos
+se conservaron para permitir una reversión de dependencias.
+
+La revisión funcional adicional se conserva en
+`backend/backups/revision_funcional_20261030/`; su piloto final está en
+`backend/backups/piloto_20261031T021340786759Z/`. Incluye las regresiones previas,
+resultados finales, revisión de rutas y comparación de integridad.
+
+La ampliación final de adjuntos está verificada en el piloto
+`backend/backups/piloto_20261031T023512482624Z/`. Las pruebas generales, de interfaz,
+compilación, respaldo y comparación antes/después de la migración están en
+`backend/backups/revision_funcional_20261030/` (archivos con sufijo `adjuntos`).
+La consulta autenticada en la base actual devolvió la lista vacía y la solicitud
+anónima fue rechazada. No se cargaron actas ficticias en la instalación real.
+
+**Versión funcional para el capítulo III:** describir los módulos implementados,
+los documentos privados por artículo/referencia, las reglas, el detector histórico,
+sus pruebas y sus límites. Las firmas, conteos, confirmaciones y métricas humanas
+pendientes se presentan como validación futura; no como funciones inexistentes ni
+resultados ya obtenidos. El modelo operativo continúa condicionado a eventos reales.
 
 Actualizar los tres documentos principales y los dos materiales de calibración
 cuando corresponda. Guardar resultados detallados en sus expedientes técnicos y

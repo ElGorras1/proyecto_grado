@@ -52,7 +52,8 @@ def consultar(
 
 def celda(v):
     value = '' if v is None else str(v)
-    return "'" + value if value.startswith(('=', '+', '-', '@', '\t', '\r', '\n')) else value
+    peligroso = value.startswith(('\t', '\r', '\n')) or value.lstrip().startswith(('=', '+', '-', '@'))
+    return "'" + value if peligroso else value
 
 
 @router.get('/reglas-historicas.csv')

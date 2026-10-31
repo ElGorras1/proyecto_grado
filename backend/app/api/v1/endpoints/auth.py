@@ -5,7 +5,7 @@ from app.db.session import get_db
 from app.schemas.auth import LoginRequest, TokenResponse, UsuarioMe
 from app.crud.usuario import registrar_login_exitoso, get_usuario_by_email
 from app.crud.auditoria import registrar_evento_auditoria
-from app.core.security import create_access_token, verify_password
+from app.core.security import create_access_token, verify_password, huella_credencial
 from app.api.deps import get_current_user, require_roles
 from app.models.usuario import Usuario
 from app.core.rate_limit import limiter
@@ -94,7 +94,7 @@ def login(request: Request, response: Response, payload: LoginRequest, db: Sessi
 
     token = create_access_token(
         subject=usuario.id,
-        extra_claims={"rol": usuario.rol.nombre},
+        extra_claims={"rol": usuario.rol.nombre, "credencial": huella_credencial(usuario.password_hash)},
     )
     cookie_evidencia(response, token)
     return TokenResponse(access_token=token)

@@ -1,6 +1,7 @@
 from typing import Literal
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
 
 
 class Settings(BaseSettings):
@@ -12,7 +13,12 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Sistema de Gestión y Trazabilidad de Activos Operativos"
     API_V1_PREFIX: str = "/api/v1"
 
-    DATABASE_URL: str
+    DATABASE_URL: str = ""
+    POSTGRES_HOST: str | None = None
+    POSTGRES_PORT: int = Field(default=5432, ge=1, le=65535)
+    POSTGRES_DB: str | None = None
+    POSTGRES_USER: str | None = None
+    POSTGRES_PASSWORD: SecretStr | None = Field(default=None, exclude=True, repr=False)
 
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: Literal["HS256"] = "HS256"
@@ -40,6 +46,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validar_horario_control(self):
+        if not self.DATABASE_URL:
+            if not all((self.POSTGRES_HOST, self.POSTGRES_DB, self.POSTGRES_USER,
+                        self.POSTGRES_PASSWORD and self.POSTGRES_PASSWORD.get_secret_value())):
+                raise ValueError("Configura DATABASE_URL o todos los parámetros POSTGRES_ de conexión")
+            self.DATABASE_URL = URL.create(
+                "postgresql+psycopg2", username=self.POSTGRES_USER,
+                password=self.POSTGRES_PASSWORD.get_secret_value(),
+                host=self.POSTGRES_HOST, port=self.POSTGRES_PORT, database=self.POSTGRES_DB,
+            ).render_as_string(hide_password=False)
         if self.CONTROL_HORA_INICIO >= self.CONTROL_HORA_FIN:
             raise ValueError("CONTROL_HORA_INICIO debe ser menor que CONTROL_HORA_FIN")
         if self.ENVIRONMENT == "production":

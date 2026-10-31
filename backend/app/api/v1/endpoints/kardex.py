@@ -3,6 +3,8 @@ import uuid
 import hashlib
 import hmac
 import json
+import logging
+from pathlib import Path
 from datetime import datetime, timedelta, UTC
 from zoneinfo import ZoneInfo
 from typing import List, Optional, Literal
@@ -67,6 +69,19 @@ router = APIRouter()
 
 STORAGE_DIR = "storage/kardex_images"
 SERVER_INSTANCE_ID = str(uuid.uuid4())
+logger = logging.getLogger(__name__)
+
+
+def limpiar_imagenes_intento_fallido(rutas):
+    """Solo copias creadas por este intento y no confirmadas en la base."""
+    raiz = Path(STORAGE_DIR).resolve()
+    for ruta in rutas:
+        try:
+            archivo = Path(ruta).resolve()
+            if archivo.is_relative_to(raiz):
+                archivo.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("No se pudo retirar una copia temporal de un intento fallido")
 
 
 @router.get("/tandas")
@@ -242,17 +257,21 @@ async def upload_lote(
     imagenes_paths = []
     try:
         os.makedirs(STORAGE_DIR, exist_ok=True)
-        lote_uuid = str(uuid.uuid4())[:8]
+        lote_uuid = uuid.uuid4().hex
         for idx, contenido in enumerate(paginas_webp, 1):
             ruta = os.path.join(STORAGE_DIR, f"lote_{lote_uuid}_pag_{idx}.webp")
-            with open(ruta, "wb") as destino:
+            # Una colisión tampoco debe sobrescribir evidencia ya existente.
+            with open(ruta, "xb") as destino:
+                imagenes_paths.append(ruta)
                 destino.write(contenido)
-            imagenes_paths.append(ruta)
 
         try:
             paginas_extraidas = await run_in_threadpool(procesar_lote_imagenes, imagenes_paths)
         except Exception as e:
-            raise HTTPException(500, f"Error en Gemini LLM: {e}") from e
+            # Los mensajes del proveedor pueden contener credenciales, rutas o
+            # fragmentos documentales. La respuesta pública no los reproduce.
+            raise HTTPException(503, "No se pudo completar la lectura de las fotografías. "
+                                "Revisa la conexión y la disponibilidad del servicio para reintentar el mismo lote.") from e
         problemas_lote = validar_paginas_lote(paginas_extraidas)
         if problemas_lote:
             raise HTTPException(422, "Lote detenido antes de guardar: " + " ".join(problemas_lote))
@@ -305,6 +324,7 @@ async def upload_lote(
         ):
             solicitud.estado = "FALLIDO"
             db.commit()
+            limpiar_imagenes_intento_fallido(imagenes_paths)
         raise
 
 

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 import pytest
 from app.models.activos import Existencia
 from app.models.area import Area
@@ -79,7 +80,7 @@ def test_conciliacion_inicial_no_borra_efectos_de_transferencia(client, db_sessi
     estado = client.get(ruta, headers=auth_headers(usuario_admin)).json()
     assert estado["estado"] == "NO_DISPONIBLE" and "transferencias" in estado["motivo"]
     r = client.post(ruta, headers=auth_headers(usuario_admin), json={
-        "fecha_conteo": str(datetime.now(UTC).date()), "areas": [{"area_id": origen.id, "cantidad": 10}],
+        "fecha_conteo": str(datetime.now(ZoneInfo("America/La_Paz")).date()), "areas": [{"area_id": origen.id, "cantidad": 10}],
         "encargado_id": usuario_admin.id, "referencia_documento": "ACTA-CONTEO-QA",
         "justificacion": "No debe reemplazar las ubicaciones posteriores", "alcance_total": True, "conteo_verificado": True})
     assert r.status_code == 409

@@ -156,7 +156,12 @@ class Contexto:
 
 
 def calcular(filas, config, partes=None):
-    partes = particionar(filas, config["semilla"]) if partes is None else partes
+    if partes is None:
+        if config.get('modo') == 'POR_ARTICULO':
+            from app.services.particiones_articulo import particionar_por_articulo
+            partes = particionar_por_articulo(filas, config['semilla'])
+        else:
+            partes = particionar(filas, config['semilla'])
     cuentas = Counter(partes)
     if len(partes) != len(filas) or set(partes) - {"entrenamiento", "calibracion", "evaluacion"}:
         raise ValueError("La asignación de particiones es inválida.")
@@ -248,6 +253,13 @@ def calcular(filas, config, partes=None):
             "año posterior reservado. Lotes indivisibles y duplicados agrupados; "
             "grupos que cruzan fronteras excluidos."
         )
+    if config.get('modo') == 'POR_ARTICULO':
+        from app.services.particiones_articulo import auditar_particiones
+        control = auditar_particiones(filas, partes)
+        if not control['sin_cruces']:
+            raise ValueError('La separación por artículo conserva relaciones entre particiones.')
+        metricas['estrategia'] = 'Componentes indivisibles de artículo, lote y fotografía; grupos 60/20/20 aproximados. Evaluación de artículos no vistos; no es validación prospectiva.'
+        metricas['control_por_articulo'] = control
     resultados = [
         dict(
             snapshot=f,

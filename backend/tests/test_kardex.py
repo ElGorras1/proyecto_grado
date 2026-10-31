@@ -151,7 +151,7 @@ def test_reintento_tras_error_ocr_reutiliza_huella_sin_duplicar(
             files=[("archivos", ("pagina.png", imagen.getvalue(), "image/png"))],
         )
 
-    assert subir().status_code == 500
+    assert subir().status_code == 503
     assert db_session.query(SolicitudCargaKardex).one().estado == "FALLIDO"
     assert subir().status_code == 200
     assert len(intentos) == 2

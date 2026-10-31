@@ -28,6 +28,11 @@ Con PostgreSQL y dependencias preparados, ejecutar desde la raíz:
 Interfaz: `http://localhost:5173/`. API: `http://127.0.0.1:8000/`.
 El inicio usa la instalación existente. El manual contiene las comprobaciones y el respaldo.
 
+Para una instalación nueva, usar los archivos de dependencias fijadas y la sección
+[Instalación y producción](docs/MANUAL_SISTEMA.md#instalación-y-producción).
+`compose.production.yml` separa la aplicación compilada del modo de desarrollo;
+su arranque en contenedores y la configuración HTTPS deben verificarse antes de la entrega.
+
 ## Material de calibración local
 
 Se conservan dos documentos complementarios, disponibles en esta instalación:

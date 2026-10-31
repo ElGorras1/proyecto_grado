@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import hashlib
+import hmac
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, VerificationError, InvalidHashError
@@ -24,12 +26,17 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+def huella_credencial(password_hash: str) -> str:
+    """Vincula la sesión a la contraseña vigente sin incluir su hash en el JWT."""
+    return hmac.new(settings.JWT_SECRET_KEY.encode(), password_hash.encode(), hashlib.sha256).hexdigest()
+
+
 def create_access_token(subject: str | int, extra_claims: dict[str, Any] | None = None) -> str:
     """
     Crea un JWT firmado.
     'subject' es normalmente el id del usuario (usuario.id).
-    'extra_claims' permite incluir rol/permisos en el propio token para
-    evitar consultas repetidas (ej: {"rol": "Administrador"}).
+    'extra_claims' incluye contexto emitido por el servidor. La autorización
+    vuelve a comprobar la cuenta y su rol vigente en cada solicitud.
     """
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode: dict[str, Any] = {"sub": str(subject), "exp": expire}

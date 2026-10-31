@@ -2,6 +2,13 @@ name: Verificación del sistema
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      validar_produccion:
+        description: Ejecutar la pila Docker QA cuando se retome su validación
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -9,6 +16,9 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.12']
     env:
       DATABASE_URL: sqlite:///./ci.db
       JWT_SECRET_KEY: clave-solo-para-pruebas-aisladas-en-ci-2026
@@ -20,15 +30,87 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python }}
           cache: pip
-          cache-dependency-path: 'backend/requirements/*.txt'
-      - run: python -m pip install --upgrade pip setuptools
-      - run: python -m pip install -r requirements.txt pip-audit
+          cache-dependency-path: backend/requirements/development.lock
+      - run: python -m pip install --require-hashes -r requirements/development.lock
       - run: python -m pip check
       - run: python -m ruff check app scripts/auditar_sistema.py --select F
       - run: python -m pytest tests -q
       - run: python -m pip_audit
+  postgresql:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql+psycopg2://activos_ci:ci-%25%40secret@localhost:5432/activos_ci
+      JWT_SECRET_KEY: clave-solo-para-pruebas-aisladas-en-ci-2026
+      ENVIRONMENT: test
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_USER: activos_ci
+          POSTGRES_PASSWORD: ci-%@secret
+          POSTGRES_DB: activos_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U activos_ci -d activos_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements/development.lock
+      - run: python -m pip install --require-hashes -r requirements/development.lock
+      - run: python -m scripts.piloto_postgresql
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: piloto-postgresql
+          path: backend/backups/piloto_*/verificacion.json
+      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.validar_produccion }}
+        run: docker compose --env-file ../produccion.env.example -f ../compose.production.yml config --quiet
+  production:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.validar_produccion }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configurar pila QA independiente
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import secrets
+          valores = {k: secrets.token_urlsafe(48) for k in
+                     ('DB_OWNER_PASSWORD', 'APP_DB_PASSWORD', 'JWT_SECRET_KEY')}
+          valores.update(PUBLIC_ORIGIN='https://inventario.example', HTTP_PORT='8088')
+          Path('.env.production').write_text(''.join(f'{k}={v}\n' for k,v in valores.items()))
+          PY
+      - run: docker compose -p activos_produccion_qa --env-file .env.production -f compose.production.yml up --build -d --wait --wait-timeout 180
+      - name: Comprobar frontend, rutas y protección de fotografías
+        run: |
+          python - <<'PY'
+          from urllib.request import urlopen
+          from urllib.error import HTTPError
+          base = 'http://127.0.0.1:8088'
+          for ruta in ('/healthz', '/login', '/inventario-vivo'):
+              with urlopen(base + ruta, timeout=15) as r:
+                  assert r.status == 200, ruta
+          for ruta in ('/api/v1/auth/me', '/storage/kardex_images/privada.webp'):
+              try:
+                  urlopen(base + ruta, timeout=15)
+              except HTTPError as e:
+                  assert e.code == 401, (ruta, e.code)
+              else:
+                  raise AssertionError('Se permitió acceso anónimo a ' + ruta)
+          PY
+      - if: always()
+        run: docker compose -p activos_produccion_qa --env-file .env.production -f compose.production.yml logs --no-color --tail 100
+      - if: always()
+        run: docker compose -p activos_produccion_qa --env-file .env.production -f compose.production.yml down
   frontend:
     runs-on: ubuntu-latest
     defaults:

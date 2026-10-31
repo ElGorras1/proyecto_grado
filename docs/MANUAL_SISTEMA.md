@@ -38,6 +38,20 @@ reservan a Administrador/Auditor. El servidor verifica los permisos en cada soli
 La adscripción de una cuenta identifica su área; el acceso operativo sigue regido
 por rol. Una separación institucional adicional por área requiere definición y pruebas.
 
+Crear, editar, desactivar, reactivar o restablecer la contraseña guarda el cambio y
+su auditoría en una misma transacción. Si la auditoría falla, el cambio se revierte.
+Solo se habilitan cuentas con uno de los tres roles activos admitidos. Los correos
+se comparan sin distinguir mayúsculas para iniciar sesión y evitar duplicados;
+las cuentas existentes no se reescribieron. Los nombres no pueden estar vacíos y
+el correo debe caber en su columna de almacenamiento.
+
+Los nuevos inicios de sesión vinculan el token a la contraseña vigente mediante
+una huella que no expone el hash almacenado. Restablecer la contraseña invalida
+esas sesiones y sus cookies de fotografías. Los tokens emitidos antes de esta
+actualización conservan su vencimiento original (60 minutos con la configuración
+local por defecto). Salir borra la sesión del navegador y la cookie; no es una
+lista de revocación individual de tokens copiados a otro dispositivo.
+
 ## Digitalización, HIL y áreas históricas
 
 1. Crear o seleccionar el artículo y cargar sus fotografías. Revisar título, orden,
@@ -55,6 +69,14 @@ Una **tanda** identifica la carga; una **gestión**, el año documental u operat
 Saldo escrito, saldo reconstruido, stock operativo y conteo físico son valores
 distintos. Avisos HIL, reglas inmediatas y rareza del modelo también tienen revisiones
 distintas. Concluir un caso de alerta no corrige existencias.
+
+Si falla el servicio de lectura, la respuesta no reproduce errores internos del
+proveedor y permite reintentar el mismo lote. Un intento propio marcado FALLIDO
+retira únicamente las copias temporales creadas por esa solicitud; no se eliminan
+fotografías preexistentes, lotes confirmados ni extracciones pendientes. Los archivos
+nuevos se crean sin sobrescribir otros. Las exportaciones CSV neutralizan también
+los textos que comienzan con espacios antes de una fórmula, conservando el original
+en la base.
 
 Las áreas inferidas se asignaron por parecido y frecuencias de artículo, hoja y
 archivo; su soporte es heurístico, no una probabilidad validada. Se conserva la sigla
@@ -106,7 +128,16 @@ cerrados. Los avisos permitidos requieren justificación; las reglas funcionan a
 el modelo operativo no esté activo. Los cierres conservan balances por versión y
 exigen sus condiciones; una reapertura y una rectificación posterior mantienen el
 antecedente. Los documentos de negocio se identifican por referencia textual; la
-carga de adjuntos operativos sigue pendiente.
+carga de adjuntos operativos está disponible en la ficha del artículo.
+
+En **Inventario actual → artículo → Actas y documentos de respaldo**, Administrador
+u Operador adjunta PDF o fotografías PNG/JPEG/WebP de hasta 10 MB, indicando la
+misma referencia documental que utilizó en la operación. Los tres roles pueden
+consultar y descargar. Se conservan usuario, fecha, tamaño y huella SHA-256, con
+auditoría del alta. La descarga exige autenticación y comprueba la huella del archivo.
+Los documentos se relacionan por artículo y referencia; no constituyen aprobación
+de un conteo ni un vínculo automático a una operación concreta. No hay eliminación
+desde la interfaz. El respaldo de `storage/` incluye los adjuntos nuevos.
 
 Preparación del inventario genera una ficha con espacios de conteo y firmas sin
 aprobar existencias. En Áreas y catálogos, una baja se rechaza si conserva stock,
@@ -115,20 +146,33 @@ custodias o cuentas activas adscritas; el histórico mantiene su identidad.
 ## Validación independiente
 
 1. Acordar el protocolo: objetivo, población, muestra, semilla, criterios, evidencias
-   y responsables. Administrador/Auditor prepara un estudio de 1 a 100 filas.
+   y responsables. Administrador/Auditor prepara un estudio de 1 a 5.000 filas,
+   sin superar la población. La pantalla consulta el marco técnico y recalcula la
+   recomendación documental; la institución confirma su elegibilidad.
 2. Congelar selección, datos y huellas. El estudio documental usa transcripción
    vigente con fotos; el del detector usa exclusivamente su evaluación reservada.
 3. Otra cuenta autorizada realiza el cotejo. El preparador y, para el detector, el
    entrenador de la versión no pueden etiquetar. La pantalla omite puntuaciones y
    decisiones previas; la independencia fuera del flujo debe comprobarse.
-4. Registrar conclusión, motivo, referencia y declaración de independencia. Las
-   dudas, errores documentales o fotos alteradas mantienen pendientes las métricas;
-   no se retiran filas para mejorar el resultado. Descargar el informe verificable.
+4. En estudios nuevos, registrar NORMAL, ANOMALO o INDETERMINADO para el detector.
+   ANOMALO requiere identificar cantidad, fecha, tipo de operación o área con
+   inconsistencia documental verificada, además del motivo y respaldo. Un
+   indeterminado inicial requiere segundo cotejo registrado: si persiste, se informa
+   separado del denominador principal. Las fotos alteradas invalidan la evidencia.
+   Descargar el informe, que muestra seleccionados, evaluables y excluidos.
 
 La concordancia por fila mide la transcripción vigente, no la exactitud del OCR
-original. Para el detector, positivo significa «inusual relevante», no fraude.
-Precisión, recall y F1 corresponden a la muestra completada; un denominador cero queda
-sin definir. Las etiquetas no se copian automáticamente a HIL ni reentrenan el modelo.
+original. En estudios versión 2, positivo significa anomalía documental verificada,
+no fraude. Los estudios anteriores conservan sus clases y cálculos; no se convierten
+retrospectivamente. Precisión, recall y F1 se calculan cuando la muestra está revisada,
+con indeterminados persistentes y denominadores informados; una división indefinida
+permanece sin valor. Las etiquetas no se copian a HIL ni reentrenan el modelo.
+
+Para nuevas versiones existe la opción de separación por artículo y documentos
+relacionados. Conserva juntos artículos, lotes y fotografías, y evalúa artículos no
+vistos; requiere suficientes grupos y suele depender de referencias globales. El
+modelo del 20/10 no se sustituye automáticamente. Consultar el
+[protocolo y los instrumentos de evaluación](PROTOCOLO_EVALUACION.md).
 
 ## Inicio, comprobaciones y respaldo
 
@@ -141,8 +185,8 @@ Con PostgreSQL y dependencias preparados, iniciar desde la raíz:
 Interfaz: `http://localhost:5173/`. API: `http://127.0.0.1:8000/`.
 El iniciador usa la instalación existente; no inicializa la base. La conexión, claves
 y demás configuración se guardan en `.env`, fuera de Git. Referencia de entorno:
-Python 3.12 y Node 24, o Node 22 desde 22.12. La entrega de producción y su instalación
-reproducible siguen pendientes; este inicio corresponde a desarrollo local.
+Python 3.11 (entorno local) o 3.12 (instalación limpia comprobada), y Node 24,
+o Node 22 desde 22.12. Este inicio corresponde a desarrollo local.
 
 Desde `backend`, con su entorno Python, se pueden ejecutar:
 
@@ -157,6 +201,81 @@ Desde `frontend`: `npm ci`, `npm test -- --maxWorkers=2`,
 base QA nueva y marcada mediante `scripts.piloto_postgresql`. La restauración crea
 otra base/carpeta y se verifica antes de reemplazar cualquier instalación. Los
 planes de corrección ya aplicados o archivados no se reejecutan para producir informes.
+
+## Instalación y producción
+
+Las dependencias Python directas y transitivas están fijadas con hashes:
+`backend/requirements/runtime.lock` para ejecución y
+`backend/requirements/development.lock` para pruebas/desarrollo. Conservan las
+versiones de scikit-learn, NumPy, SciPy y joblib del modelo existente. Instalar en
+un entorno nuevo con Python 3.11 o 3.12:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --require-hashes -r requirements/development.lock
+.\.venv\Scripts\python.exe -m pip check
+```
+
+En Linux, el ejecutable equivalente es `.venv/bin/python`. Para renovar las
+dependencias, modificar los archivos fuente y regenerar ambos locks con
+`uv pip compile --universal --python-version 3.11 --generate-hashes`, usando como
+entradas `requirements/runtime.in` y `requirements.txt`, respectivamente. Repetir
+pruebas y auditoría antes de distribuirlos. Las restricciones de `security.txt`
+también protegen las instalaciones parciales. Los paquetes OCR experimentales
+ajenos al circuito actual no forman parte del entorno mínimo.
+
+La pila `compose.production.yml` tiene PostgreSQL 18 en un volumen propio,
+migración previa al arranque de la API, ejecución sin recarga y sin usuario root,
+frontend compilado servido por Nginx, y volúmenes privados para fotografías,
+modelos, respaldos y registros. La API usa el rol `activos_app`, con lectura y
+escritura de datos; el rol propietario se reserva para migraciones y recuperación.
+El script de roles solo actúa sobre un volumen nuevo. La pila de desarrollo
+existente conserva su configuración y sus volúmenes.
+
+Copiar `produccion.env.example` a `.env.production` y sustituir las tres claves por
+valores aleatorios distintos. `PUBLIC_ORIGIN` debe ser el origen HTTPS real.
+`POSTGRES_*` construye la conexión sin concatenar contraseñas; también se mantiene
+el soporte de `DATABASE_URL`, incluidos caracteres escapados en Alembic.
+
+```powershell
+docker compose --env-file .env.production -f compose.production.yml config --quiet
+docker compose --env-file .env.production -f compose.production.yml up --build -d
+docker compose --env-file .env.production -f compose.production.yml exec backend python -m scripts.seed_admin --email correo-institucional --nombre "Administrador responsable"
+```
+
+El último comando solicita la contraseña de forma privada y rechaza sustituir un
+administrador existente. En el ejemplo se debe escribir un correo válido real.
+Solo Nginx publica `127.0.0.1:8080`; API y base quedan en la red interna. Un proxy
+HTTPS de la instalación debe dirigir el dominio a ese puerto. Verificar además
+los proxies de confianza y la identificación de IP del cliente en la red elegida.
+La cookie privada de fotografías es segura en producción y requiere HTTPS.
+`/storage/` siempre pasa por la autenticación de la API; no se sirve como carpeta
+pública. El frontend usa `/api/v1` en el mismo origen.
+
+La configuración se comprobó con Compose, pero el motor Docker de este equipo
+no consiguió iniciar durante la revisión del 30/10. Por ello, la construcción,
+el arranque completo, HTTPS y la carga concurrente de esta pila siguen pendientes
+de ensayo en un equipo con Docker operativo. Las imágenes base usan etiquetas:
+registrar sus digests en la entrega institucional. No ejecutar `down -v` sobre
+una instalación con datos que deban conservarse.
+
+El respaldo local continúa usando `scripts.respaldo_recuperacion`. En contenedores,
+ejecutarlo con la cuenta propietaria desde el servicio de migración:
+
+```powershell
+docker compose --env-file .env.production -f compose.production.yml run --rm migrate python -m scripts.respaldo_recuperacion
+```
+
+La recuperación crea una base QA independiente y verifica tablas, secuencias y
+archivos; no reemplaza la base operativa. Las herramientas localizan `pg_dump` y
+`pg_restore` mediante `POSTGRES_BIN`, PATH o la instalación de PostgreSQL en Windows.
+El cliente de producción es de la misma versión mayor que su servidor. La copia
+del volumen de respaldos a un destino externo y la restauración en el servidor
+definitivo forman parte del procedimiento de entrega.
+
+La compilación de dependencias sigue la [documentación oficial de uv](https://docs.astral.sh/uv/pip/compile/)
+y el cliente Linux utiliza el [repositorio oficial PostgreSQL](https://www.postgresql.org/download/linux/debian/).
 
 ## Presentación y diseño
 

@@ -177,7 +177,7 @@ def reporte_inventario(
 def _celda_csv(valor):
     texto = "" if valor is None else str(valor)
     # Excel interpreta estos prefijos como fórmulas; el Kárdex contiene texto no confiable.
-    if texto.startswith(("=", "+", "-", "@", "\t", "\r", "\n")):
+    if texto.startswith(("\t", "\r", "\n")) or texto.lstrip().startswith(("=", "+", "-", "@")):
         return "'" + texto
     return texto
 

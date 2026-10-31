@@ -20,6 +20,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, inspect, text
 
 from app.db.session import engine
+from app.core.postgres_tools import postgres_tool
 
 
 BACKEND = Path(__file__).resolve().parents[1]
@@ -109,7 +110,6 @@ def main() -> None:
         fuente = args.fuentes_tanda2.resolve(strict=True)
         antes = snapshot_db(engine)
         url = engine.url
-        pg_bin = Path(os.environ.get("POSTGRES_BIN", r"C:\Program Files\PostgreSQL\18\bin"))
         conexion = ["-h", url.host or "localhost", "-p", str(url.port or 5432),
                     "-U", url.username or "postgres"]
         entorno = os.environ.copy()
@@ -117,9 +117,9 @@ def main() -> None:
             entorno["PGPASSWORD"] = url.password
 
         dump = carpeta / "base.dump"
-        subprocess.run([str(pg_bin / "pg_dump.exe"), *conexion, "-Fc", "-f",
+        subprocess.run([str(postgres_tool("pg_dump")), *conexion, "-Fc", "-f",
                         str(dump), url.database], env=entorno, check=True)
-        subprocess.run([str(pg_bin / "pg_restore.exe"), "-l", str(dump)],
+        subprocess.run([str(postgres_tool("pg_restore")), "-l", str(dump)],
                        stdout=subprocess.DEVNULL, env=entorno, check=True)
         despues = snapshot_db(engine)
         if antes != despues:
@@ -150,7 +150,7 @@ def main() -> None:
             conn.execute(text(f'CREATE DATABASE "{nombre_copia}"'))
         admin.dispose()
         reporte["base_restaurada"] = nombre_copia
-        subprocess.run([str(pg_bin / "pg_restore.exe"), *conexion, "--no-owner",
+        subprocess.run([str(postgres_tool("pg_restore")), *conexion, "--no-owner",
                         "--exit-on-error", "-d", nombre_copia, str(dump)],
                        env=entorno, check=True)
         restaurada = create_engine(url.set(database=nombre_copia))

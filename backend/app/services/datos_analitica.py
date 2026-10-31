@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from collections import Counter, defaultdict
+from sqlalchemy.orm import defer
 
 from app.models.activos import Activo
 from app.models.kardex import MovimientoKardex
@@ -65,6 +66,9 @@ def leer_corte(db, excluir_articulos=()):
     filas = [
         snapshot(m, a)
         for m, a in db.query(MovimientoKardex, Activo)
+        # El original completo se conserva para auditoría, pero este corte usa
+        # campos vigentes y revisión documental. No transferir su JSON anidado.
+        .options(defer(MovimientoKardex.datos_originales))
         .join(Activo, Activo.id == MovimientoKardex.articulo_id)
         .order_by(MovimientoKardex.id)
         .all()

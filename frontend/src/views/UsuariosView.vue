@@ -50,7 +50,15 @@ async function cargarDatos() {
   error.value = ''
   try {
     const [respUsuarios, respRoles] = await Promise.all([
-      api.get('/usuarios'),
+      (async () => {
+        const todos: Usuario[] = []
+        let pagina: Usuario[]
+        do {
+          pagina = (await api.get('/usuarios', { params: { skip: todos.length, limit: 200 } })).data
+          todos.push(...pagina)
+        } while (pagina.length === 200)
+        return { data: todos }
+      })(),
       api.get('/usuarios/roles'),
     ])
     usuarios.value = respUsuarios.data

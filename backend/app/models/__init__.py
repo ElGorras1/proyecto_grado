@@ -1,4 +1,5 @@
 from app.models.rol import Rol
+from app.models.documento_operativo import DocumentoOperativo
 from app.models.permiso import Permiso
 from app.models.rol_permiso import rol_permiso
 from app.models.area import Area
@@ -14,6 +15,7 @@ from app.models.auditoria import Alerta, CasoAuditoria, RevisionCaso, AuditoriaS
 from app.models.kardex import LoteCarga, MovimientoKardex, LotePendiente, SolicitudCargaKardex, MovimientoKardexArchivado
 
 __all__ = [
+    "DocumentoOperativo",
     "Rol",
     "Permiso",
     "rol_permiso",

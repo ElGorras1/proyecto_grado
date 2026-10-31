@@ -3,6 +3,8 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import auth, auditoria, usuarios, kardex, reportes, dashboard, muestra_hil, conciliacion, transferencias, kardex_digital, custodias_externas, ajustes_operativos
 
 api_router = APIRouter()
+from app.api.v1.endpoints import documentos_operativos
+api_router.include_router(documentos_operativos.router)
 api_router.include_router(auth.router)
 api_router.include_router(auditoria.router)
 api_router.include_router(usuarios.router)

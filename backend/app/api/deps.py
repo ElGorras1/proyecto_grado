@@ -1,8 +1,10 @@
+import hmac
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, huella_credencial
 from app.crud.usuario import get_usuario_by_id
 from app.db.session import get_db
 from app.models.usuario import Usuario
@@ -48,6 +50,14 @@ def get_current_user(
 
     if usuario.rol.nombre not in ("Administrador", "Operador", "Auditor"):
         raise HTTPException(status_code=403, detail="Rol sin permisos para este sistema")
+
+    # Los inicios de sesión nuevos incluyen esta huella. Un restablecimiento
+    # invalida el Bearer y la cookie de fotos sin reescribir las cuentas.
+    # Los JWT anteriores a esta actualización caducan con su plazo original.
+    if "credencial" in payload:
+        huella = payload["credencial"]
+        if not isinstance(huella, str) or not hmac.compare_digest(huella.encode(), huella_credencial(usuario.password_hash).encode()):
+            raise credentials_exception
 
     return usuario
 

@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import BuscadorArticulos from '@/components/BuscadorArticulos.vue'
 import TrazabilidadArticulo from '@/components/TrazabilidadArticulo.vue'
 import RectificacionLogistica from '@/components/RectificacionLogistica.vue'
+import DocumentosOperativos from '@/components/DocumentosOperativos.vue'
 import type { ClaseLogistica, DatosLogisticos, FuenteLogistica, RectificableLogistico } from '@/services/rectificacionLogistica'
 import { useRoute } from 'vue-router'
 
@@ -1057,6 +1058,7 @@ async function registrarTransaccion() {
  <a v-if="politicaControl" href="#ficha-controles">Reglas de control</a>
 </nav>
 <div class="detalle-mosaico">
+<DocumentosOperativos :key="articuloSeleccionado.id" :articulo-id="articuloSeleccionado.id" :puede-subir="auth.rol === 'Administrador' || auth.rol === 'Operador'" />
 <section v-if="existenciasArea" id="ficha-ubicacion" class="context-box detalle-panel " aria-label="Existencias por ubicación">
         <h3>Existencias por área</h3>
         <p>Total institucional: <strong>{{ existenciasArea.total_institucional ?? 'Sin apertura' }} u.</strong></p>

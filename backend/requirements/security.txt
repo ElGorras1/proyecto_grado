@@ -1,0 +1,8 @@
+# Versiones corregidas verificadas mediante pip-audit el 30/10/2026.
+# Las restricciones no instalan paquetes opcionales por sí solas.
+certifi==2026.10.23
+dnspython==2.9.1
+filelock==4.2.5
+pyasn1==0.6.5
+pypdf==6.21.4
+setuptools==84.2.1

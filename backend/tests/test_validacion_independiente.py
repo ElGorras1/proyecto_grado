@@ -1,4 +1,5 @@
 """Referencia humana nueva, cegamiento, muestra congelada y denominadores."""
+
 from copy import deepcopy
 
 import pytest
@@ -26,31 +27,54 @@ def evidencia(tmp_path, monkeypatch):
 
 
 def crear(client, usuario, tipo="DOCUMENTAL", modelo=None, tamano=4):
-    r = client.post(RUTA, headers=cabecera(usuario), json=dict(tipo=tipo,
-        modelo_id=modelo.id if modelo else None, tamano=tamano, semilla="protocolo-c06",
-        referencia_protocolo="ACTA-QA: criterios y muestreo definidos antes de revisar"))
+    r = client.post(
+        RUTA,
+        headers=cabecera(usuario),
+        json=dict(
+            tipo=tipo,
+            modelo_id=modelo.id if modelo else None,
+            tamano=tamano,
+            semilla="protocolo-c06",
+            referencia_protocolo="ACTA-QA: criterios y muestreo definidos antes de revisar",
+        ),
+    )
     assert r.status_code == 201, r.text
     return r.json()
 
 
-def etiquetar(client, usuario, estudio, item, etiqueta, anterior=0):
-    return client.post(f"{RUTA}/{estudio['id']}/filas/{item}/etiqueta", headers=cabecera(usuario),
-        json=dict(huella_estudio=estudio["huella_estudio"], revision_esperada=anterior,
-            etiqueta=etiqueta, motivo="Cotejo humano ficticio en la fotografía de QA.",
-            referencia="ACTA-QA-LECTURA", independiente=True))
+def etiquetar(client, usuario, estudio, item, etiqueta, anterior=0, segunda=False):
+    return client.post(
+        f"{RUTA}/{estudio['id']}/filas/{item}/etiqueta",
+        headers=cabecera(usuario),
+        json=dict(
+            huella_estudio=estudio["huella_estudio"],
+            revision_esperada=anterior,
+            etiqueta=etiqueta,
+            motivo="Cotejo humano ficticio en la fotografía de QA.",
+            referencia="ACTA-QA-LECTURA",
+            independiente=True,
+            segunda_revision=segunda,
+            criterio="CANTIDAD" if etiqueta == "ANOMALO" else None,
+        ),
+    )
 
 
 def informe(client, usuario, e):
     r = client.get(f"{RUTA}/{e['id']}/informe.json", headers=cabecera(usuario))
     assert r.status_code == 200, r.text
     datos = r.json()
-    assert datos["huella_exportacion"] == huella({k: v for k, v in datos.items() if k != "huella_exportacion"})
-    assert [f["id"] for f in datos["filas"]] == seleccionar(datos["poblacion_ids"], len(datos["filas"]), datos["semilla"])
+    assert datos["huella_exportacion"] == huella(
+        {k: v for k, v in datos.items() if k != "huella_exportacion"}
+    )
+    assert [f["id"] for f in datos["filas"]] == seleccionar(
+        datos["poblacion_ids"], len(datos["filas"]), datos["semilla"], datos["version"]
+    )
     return datos
 
 
-def test_documental_no_cuenta_hil_y_exige_otro_revisor(client, db_session, historico,
-        usuario_admin, usuario_auditor, usuario_operador, evidencia):
+def test_documental_no_cuenta_hil_y_exige_otro_revisor(
+    client, db_session, historico, usuario_admin, usuario_auditor, usuario_operador, evidencia
+):
     e = crear(client, usuario_admin)
     assert e["seleccionadas"] == 4 and e["poblacion"] == 200
     antes = [(m.id, m.saldo_registrado) for m in db_session.query(MovimientoKardex)]
@@ -74,16 +98,24 @@ def test_documental_no_cuenta_hil_y_exige_otro_revisor(client, db_session, histo
     assert r["estado"] == "MUESTRA_COMPLETA" and r["metricas"]["concordancia_filas"] == 1
     assert r["metricas"]["precision"] is None and r["publicacion_institucional"] == "PENDIENTE"
     # Una rectificación conserva la decisión anterior y no cambia el Kárdex.
-    assert etiquetar(client, usuario_auditor, e, ids[0], "DIFERENCIA_DOCUMENTO", primera.json()["id"]).status_code == 200
-    assert informe(client, usuario_admin, e)["metricas"]["concordancia_filas"] == .75
+    assert (
+        etiquetar(
+            client, usuario_auditor, e, ids[0], "DIFERENCIA_DOCUMENTO", primera.json()["id"]
+        ).status_code
+        == 200
+    )
+    assert informe(client, usuario_admin, e)["metricas"]["concordancia_filas"] == 0.75
     assert db_session.query(AuditoriaSistema).filter_by(accion=ETIQUETAR).count() == 5
     assert [(m.id, m.saldo_registrado) for m in db_session.query(MovimientoKardex)] == antes
 
 
-def test_foto_cambiada_invalida_metricas_y_bloquea_nueva_conclusion(client, historico,
-        usuario_admin, usuario_auditor, evidencia):
+def test_foto_cambiada_invalida_metricas_y_bloquea_nueva_conclusion(
+    client, historico, usuario_admin, usuario_auditor, evidencia
+):
     e = crear(client, usuario_admin, tamano=1)
-    mid = client.get(f"{RUTA}/{e['id']}", headers=cabecera(usuario_auditor)).json()["filas"][0]["id"]
+    mid = client.get(f"{RUTA}/{e['id']}", headers=cabecera(usuario_auditor)).json()["filas"][0][
+        "id"
+    ]
     assert etiquetar(client, usuario_auditor, e, mid, "COINCIDE_DOCUMENTO").status_code == 200
     evidencia.write_bytes(b"OTRA-FOTO")
     r = informe(client, usuario_admin, e)
@@ -92,41 +124,69 @@ def test_foto_cambiada_invalida_metricas_y_bloquea_nueva_conclusion(client, hist
     assert etiquetar(client, usuario_auditor, e, mid, "COINCIDE_DOCUMENTO").status_code == 409
 
 
-def test_detector_solo_evaluacion_sin_puntuaciones_ni_hil_reutilizado(client, db_session,
-        modelo_evaluado, usuario_admin, usuario_auditor, evidencia):
+def test_detector_solo_evaluacion_sin_puntuaciones_ni_hil_reutilizado(
+    client, db_session, modelo_evaluado, usuario_admin, usuario_auditor, evidencia
+):
     j = modelo_evaluado
     # Incluso una conclusión previa asistida no se traslada al nuevo estudio.
     for f in db_session.query(ResultadoHistorico).filter_by(modelo_id=j.id):
         f.estado_revision, f.etiqueta = "CERRADO", "LEGITIMO"
     db_session.commit()
     antes = deepcopy(j.corte), deepcopy(j.metricas)
-    e = crear(client, usuario_admin, "DETECTOR", j, tamano=100)
+    e = crear(client, usuario_admin, "DETECTOR", j, tamano=40)
     d = client.get(f"{RUTA}/{e['id']}", headers=cabecera(usuario_auditor)).json()
     assert len(d["filas"]) == 40  # población QA menor al tamaño pedido
     assert all(i["revision"] is None for i in d["filas"])
     texto = str(d)
-    assert not any(k in texto for k in ("prediccion", "score", "muestra_control", "alerta", "contexto"))
-    rs = {r.movimiento_id: r for r in db_session.query(ResultadoHistorico).filter_by(modelo_id=j.id)}
+    assert not any(
+        k in texto for k in ("prediccion", "score", "muestra_control", "alerta", "contexto")
+    )
+    rs = {
+        r.movimiento_id: r for r in db_session.query(ResultadoHistorico).filter_by(modelo_id=j.id)
+    }
     assert all(rs[i["id"]].particion == "evaluacion" for i in d["filas"])
     # Etiquetas sintéticas independientes del valor predicho, para verificar la fórmula.
     verdad = {i["id"]: i["id"] % 2 == 0 for i in d["filas"]}
     for i in d["filas"]:
-        assert etiquetar(client, usuario_auditor, e, i["id"],
-            "INUSUAL_RELEVANTE" if verdad[i["id"]] else "LEGITIMO").status_code == 200
+        assert (
+            etiquetar(
+                client, usuario_auditor, e, i["id"], "ANOMALO" if verdad[i["id"]] else "NORMAL"
+            ).status_code
+            == 200
+        )
     r = informe(client, usuario_admin, e)
     tp = sum(rs[mid].alerta and v for mid, v in verdad.items())
     fp = sum(rs[mid].alerta and not v for mid, v in verdad.items())
     fn = sum(not rs[mid].alerta and v for mid, v in verdad.items())
     assert r["estado"] == "MUESTRA_COMPLETA"
-    assert r["metricas"]["matriz"] == dict(tp=tp, fp=fp, fn=fn, tn=40-tp-fp-fn)
-    assert r["metricas"]["recall"] == tp / (tp+fn)
-    assert r["metricas"]["f1"] == 2*tp/(2*tp+fp+fn)
+    assert r["metricas"]["matriz"] == dict(tp=tp, fp=fp, fn=fn, tn=40 - tp - fp - fn)
+    assert r["metricas"]["recall"] == tp / (tp + fn)
+    assert r["metricas"]["f1"] == 2 * tp / (2 * tp + fp + fn)
     assert not db_session.query(RevisionHistorica).count()
     assert (j.corte, j.metricas) == antes
-    # Un error documental no se vuelve negativo para mejorar el denominador.
+    # Las categorías anteriores no se aceptan en el protocolo nuevo.
     fila = r["filas"][0]
-    assert etiquetar(client, usuario_auditor, e, fila["id"], "ERROR_DOCUMENTAL", fila["revision"]["id"]).status_code == 200
+    assert (
+        etiquetar(
+            client, usuario_auditor, e, fila["id"], "ERROR_DOCUMENTAL", fila["revision"]["id"]
+        ).status_code
+        == 422
+    )
+    primera = etiquetar(
+        client, usuario_auditor, e, fila["id"], "INDETERMINADO", fila["revision"]["id"]
+    )
+    assert primera.status_code == 200
     assert informe(client, usuario_admin, e)["metricas"]["matriz"] is None
+    segunda = etiquetar(
+        client, usuario_auditor, e, fila["id"], "INDETERMINADO", primera.json()["id"], segunda=True
+    )
+    assert segunda.status_code == 200
+    final = informe(client, usuario_admin, e)
+    assert final["estado"] == "MUESTRA_COMPLETA"
+    assert final["progreso"]["denominador_principal"] == 39
+    assert final["progreso"]["indeterminados_excluidos"] == 1
+    assert sum(final["metricas"]["matriz"].values()) == 39
+    assert (j.corte, j.metricas) == antes
 
 
 def test_estudio_alterado_no_es_evaluable(client, db_session, historico, usuario_admin, evidencia):
@@ -137,14 +197,136 @@ def test_estudio_alterado_no_es_evaluable(client, db_session, historico, usuario
     s.detalle = datos
     db_session.commit()
     assert client.get(f"{RUTA}/{e['id']}", headers=cabecera(usuario_admin)).status_code == 409
-    assert client.get(f"{RUTA}/{e['id']}/informe.json", headers=cabecera(usuario_admin)).status_code == 409
+    assert (
+        client.get(f"{RUTA}/{e['id']}/informe.json", headers=cabecera(usuario_admin)).status_code
+        == 409
+    )
 
 
 def test_sorteo_y_divisiones_sin_datos_no_inventan_metricas():
     assert seleccionar(range(20), 10, "s") == seleccionar(reversed(range(20)), 10, "s")
     assert seleccionar(range(20), 10, "s") != seleccionar(range(20), 10, "otra")
     from types import SimpleNamespace
+
     rs = {1: SimpleNamespace(detalle={"etiqueta": "LEGITIMO"})}
     r = metricas("DETECTOR", [{"id": 1, "prediccion": False}], rs, True)
     assert r["matriz"] == dict(tp=0, fp=0, fn=0, tn=1)
     assert r["precision"] is None and r["recall"] is None and r["f1"] is None
+
+
+def test_marco_y_muestra_mayor_de_cien_sin_recorte_silencioso(
+    client, historico, usuario_admin, evidencia
+):
+    from app.services.validacion_independiente import tamano_documental
+
+    assert tamano_documental(25000) == 379
+    assert tamano_documental(0) == 0
+    h = cabecera(usuario_admin)
+    marco = client.get("/api/v1/validacion/marco", params={"tipo": "DOCUMENTAL"}, headers=h)
+    assert marco.status_code == 200
+    assert marco.json()["poblacion"] == 200
+    assert marco.json()["tamano_documental_sugerido"] == tamano_documental(200)
+    assert marco.json()["confirmacion_institucional"] == "PENDIENTE"
+    e = crear(client, usuario_admin, tamano=150)
+    assert e["version"] == 2 and e["seleccionadas"] == 150
+    body = dict(
+        tipo="DOCUMENTAL",
+        tamano=201,
+        semilla="mismo-marco",
+        referencia_protocolo="PROTOCOLO-QA definido antes del cotejo",
+    )
+    assert client.post(RUTA, json=body, headers=h).status_code == 422
+    assert (
+        client.get("/api/v1/validacion/marco", params={"tipo": "DETECTOR"}, headers=h).status_code
+        == 422
+    )
+
+
+def test_criterio_documental_y_segunda_revision_requieren_respaldo_previo(
+    client, modelo_evaluado, usuario_admin, usuario_auditor, evidencia
+):
+    e = crear(client, usuario_admin, "DETECTOR", modelo_evaluado, tamano=1)
+    fila = client.get(f"{RUTA}/{e['id']}", headers=cabecera(usuario_auditor)).json()["filas"][0][
+        "id"
+    ]
+    assert (
+        etiquetar(client, usuario_auditor, e, fila, "INDETERMINADO", segunda=True).status_code
+        == 409
+    )
+    payload = dict(
+        huella_estudio=e["huella_estudio"],
+        revision_esperada=0,
+        etiqueta="ANOMALO",
+        motivo="Inconsistencia verificada en el documento QA.",
+        referencia="ACTA-QA",
+        independiente=True,
+    )
+    assert (
+        client.post(
+            f"{RUTA}/{e['id']}/filas/{fila}/etiqueta",
+            json=payload,
+            headers=cabecera(usuario_auditor),
+        ).status_code
+        == 422
+    )
+    primera = etiquetar(client, usuario_auditor, e, fila, "INDETERMINADO")
+    assert primera.status_code == 200
+    assert informe(client, usuario_admin, e)["progreso"]["pendientes"] == 1
+    assert (
+        etiquetar(
+            client, usuario_auditor, e, fila, "INDETERMINADO", primera.json()["id"], segunda=True
+        ).status_code
+        == 200
+    )
+    resultado = informe(client, usuario_admin, e)
+    assert resultado["estado"] == "SIN_CASOS_EVALUABLES"
+    assert resultado["progreso"]["denominador_principal"] == 0
+    assert all(v is None for v in resultado["metricas"].values())
+
+
+def test_estudio_legacy_conserva_clases_sorteo_y_denominadores(
+    client, db_session, modelo_evaluado, usuario_admin, usuario_auditor, evidencia
+):
+    from app.services import validacion_independiente as servicio
+
+    e = crear(client, usuario_admin, "DETECTOR", modelo_evaluado, tamano=4)
+    registro = db_session.get(AuditoriaSistema, e["id"])
+    datos = deepcopy(registro.detalle)
+    datos["version"], datos["metodo"], datos["alcance"] = (
+        1,
+        "sorteo_huella_semilla_id_v1",
+        servicio.ALCANCE,
+    )
+    por_id = {
+        r.movimiento_id: r
+        for r in db_session.query(ResultadoHistorico).filter_by(modelo_id=modelo_evaluado.id)
+    }
+    plantilla = datos["items"][0]
+    datos["items"] = [
+        dict(
+            id=mid,
+            documento={k: por_id[mid].snapshot.get(k) for k in servicio.CAMPOS},
+            foto_sha256=plantilla["foto_sha256"],
+            prediccion=por_id[mid].alerta,
+        )
+        for mid in seleccionar(datos["poblacion_ids"], 4, datos["semilla"])
+    ]
+    datos.pop("huella_estudio")
+    datos["huella_estudio"] = huella(datos)
+    registro.detalle = datos
+    db_session.commit()
+    e = {**e, "huella_estudio": datos["huella_estudio"]}
+    for item in datos["items"]:
+        assert etiquetar(client, usuario_auditor, e, item["id"], "LEGITIMO").status_code == 200
+    r = informe(client, usuario_admin, e)
+    assert r["version"] == 1 and r["criterio_legacy"] is True
+    assert r["clase_positiva"] == "INUSUAL_RELEVANTE"
+    assert sum(r["metricas"]["matriz"].values()) == 4
+    item = r["filas"][0]
+    assert (
+        etiquetar(
+            client, usuario_auditor, e, item["id"], "ERROR_DOCUMENTAL", item["revision"]["id"]
+        ).status_code
+        == 200
+    )
+    assert informe(client, usuario_admin, e)["metricas"]["matriz"] is None
