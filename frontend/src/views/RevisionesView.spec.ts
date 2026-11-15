@@ -12,7 +12,7 @@ beforeEach(() => {
   auth.rol = 'Administrador'; get.mockReset(); post.mockReset()
   get.mockImplementation((url: string) => Promise.resolve({ data: url === '/automatizacion/estado' ? { configurada: true, habilitada: true } : url.includes('/seguimiento/') ? detalle : bandeja }))
 })
-function montar() { return mount(RevisionesView, { global: { stubs: { RouterLink: RouterLinkStub } } }) }
+function montar() { return mount(RevisionesView, { global: { stubs: { RouterLink: RouterLinkStub, TrazabilidadArticulo: true } } }) }
 function diferida<T>() {
   let resolve!: (value: T) => void, reject!: (reason: unknown) => void
   const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
@@ -77,7 +77,10 @@ describe('Revisiones cotidianas', () => {
   it('reúne avisos con su origen y evidencia, sin solicitar entrenamientos', async () => {
     const w = montar(); await flushPromises()
     expect(w.text()).toContain('Revisión documental'); expect(w.text()).toContain('Análisis automático')
-    expect(w.findComponent(RouterLinkStub).props('to')).toEqual(fila.destino)
+    await w.findAll('button').find(b => b.text() === 'Ver documento')!.trigger('click')
+    await flushPromises()
+    expect(w.findAllComponents(RouterLinkStub).find(l => l.text() === 'Ver revisión documental del artículo')?.props('to')).toEqual(fila.destino)
+    expect(w.get('trazabilidad-articulo-stub').attributes('evento')).toBe('HISTORICO:1')
     expect(get.mock.calls.some(c => String(c[0]).includes('entrenar'))).toBe(false)
     expect(post).not.toHaveBeenCalled()
     w.unmount()

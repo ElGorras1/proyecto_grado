@@ -14,15 +14,58 @@ from app.api.deps import require_roles
 from app.api.v1.endpoints.kardex_digital import consultar_kardex_digital
 from app.db.session import get_db
 from app.models.activos import Activo
+from app.models.area import Area
 from app.models.cierre_anual import CierreAnual
 from app.models.control_alertas import CasoControl
-from app.models.inventario import AperturaInventario, ConciliacionInicial
+from app.models.inventario import AperturaInventario, ConciliacionInicial, CustodiaExterna
 from app.services.datos_analitica import leer_corte
 from app.services.inventario import base_kardex_dict, distribucion_dict
 from app.services.cierre_documental import fuentes_cierre
+from app.services.rectificaciones_logisticas import estado_vigente
 
 router = APIRouter(prefix="/reportes/institucional", tags=["Informe institucional"])
 lector = require_roles("Administrador", "Auditor", "Operador")
+
+
+def resumen_areas(db, movimientos, casos):
+    areas = {
+        a.id: dict(id=a.id, nombre=a.nombre, entradas=0, salidas=0,
+                   custodia_actual=0, alertas_abiertas=0)
+        for a in db.query(Area).order_by(Area.nombre, Area.id)
+    }
+    custodias = {c.id: c for c in db.query(CustodiaExterna)}
+    for c in custodias.values():
+        if c.cantidad_fuera:
+            vigente, _, _ = estado_vigente(db, "ENTREGA", c)
+            origen = vigente.get("area_origen_id")
+            if origen in areas:
+                areas[origen]["custodia_actual"] += c.cantidad_fuera
+
+    avisos = {
+        (c.snapshot.get("clase"), c.snapshot.get("id")) for c in casos
+        if c.estado in ("PENDIENTE", "EN_REVISION", "SEGUIMIENTO")
+    }
+    clases = dict(OPERACION="MOVIMIENTO", TRANSFERENCIA="TRANSFERENCIA",
+                  CUSTODIA_ENTREGA="CUSTODIA", CUSTODIA_VENTA="EVENTO_CUSTODIA",
+                  CUSTODIA_RETORNO="EVENTO_CUSTODIA")
+    for e in movimientos:
+        clase = e["clase"]
+        if e["estado"] != "ACTIVO" or clase not in clases or e.get("corrige_movimiento_id"):
+            continue
+        origen, destino = e.get("area_origen_id"), e.get("area_destino_id")
+        unidades = e["cantidad_transferida"]
+        if origen in areas:
+            areas[origen]["salidas"] += unidades or e["salida"]
+        if destino in areas:
+            areas[destino]["entradas"] += unidades or e["ingreso"]
+        if (clases[clase], e["id"]) in avisos:
+            afectadas = {origen, destino}
+            custodia = custodias.get(e.get("custodia_id"))
+            if custodia:
+                afectadas.add(custodia.area_origen_id)
+            for aid in afectadas.intersection(areas):
+                areas[aid]["alertas_abiertas"] += 1
+    return list(areas.values())
 
 
 def construir(db, gestion):
@@ -86,6 +129,7 @@ def construir(db, gestion):
     )
     perfil = leer_corte(db)["perfil"]
     vigente = db.query(CierreAnual).filter_by(gestion_activa=gestion).first()
+    casos = db.query(CasoControl).all()
     return jsonable_encoder(
         dict(
             gestion=gestion,
@@ -115,7 +159,8 @@ def construir(db, gestion):
                 por_gestion=perfil["por_gestion"],
                 porcentaje_fisico=None,
             ),
-            alertas=dict(Counter(c.estado for c in db.query(CasoControl))),
+            alertas=dict(Counter(c.estado for c in casos)),
+            areas_operativas=resumen_areas(db, movimientos, casos),
             articulos_con_error_integridad=sorted(set(errores)),
             cierre_vigente=(
                 {

@@ -1,4 +1,5 @@
 """Relaciones explícitas y evidencia, sin deducir recorridos físicos del saldo."""
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import PurePosixPath
@@ -47,6 +48,7 @@ def consultar_trazabilidad(
     ubicacion: str | None = Query(None, max_length=200),
     tanda: int | None = Query(None, ge=1, le=9999),
     relacion: Literal["CONFIRMADA", "PENDIENTE"] | None = None,
+    evento: str | None = Query(None, pattern=r"^[A-Z_]+:[1-9]\d*$", max_length=48),
     offset: int = Query(0, ge=0), limite: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db), usuario: Usuario = Depends(get_current_user),
 ):
@@ -228,8 +230,28 @@ def consultar_trazabilidad(
             "estado": m.estado, "encargado": m.encargado_nombre, "registrador": m.usuario_operador},
             [{"ubicacion": area(m.area_operativa_id), "direccion": "REGISTRO", "etiqueta": "Antecedente anterior al corte", "certeza": "PENDIENTE"}])
 
+    relacionados = None
+    if evento:
+        if evento not in eventos:
+            raise HTTPException(404, "El evento no pertenece a este artículo.")
+        enlaces = defaultdict(set)
+        for clave, registro in eventos.items():
+            for vinculo in registro["vinculos"]:
+                destino = vinculo["destino"]
+                if destino in eventos:
+                    enlaces[clave].add(destino)
+                    enlaces[destino].add(clave)
+        relacionados = {evento}
+        por_ver = [evento]
+        while por_ver:
+            nuevos = enlaces[por_ver.pop()] - relacionados
+            relacionados.update(nuevos)
+            por_ver.extend(nuevos)
+
     filtrados = []
     for e in eventos.values():
+        if relacionados is not None and e["clave"] not in relacionados:
+            continue
         dia = dia_operacion(e["fecha"])
         if sin_fecha and dia is not None:
             continue
@@ -251,7 +273,7 @@ def consultar_trazabilidad(
         else:
             valor = datetime.combine(valor or date.min, datetime.min.time(), tzinfo=BOLIVIA)
         return valor, e["clase"], e["id"]
-    filtrados.sort(key=orden_evento, reverse=True)
+    filtrados.sort(key=lambda e: (e["clave"] == evento, orden_evento(e)), reverse=True)
     pagina = filtrados[offset:offset + limite]
     seleccion = {e["clave"]: e for e in pagina}
     contexto, links, avisos = {}, [], []

@@ -6,8 +6,9 @@ import cytoscape, { type Core, type ElementDefinition } from 'cytoscape'
 const props = defineProps<{
   elementos: ElementDefinition[]
   seleccionado?: string | null
+  flujos?: boolean
 }>()
-const emit = defineEmits<{ seleccionar: [clave: string] }>()
+const emit = defineEmits<{ seleccionar: [clave: string]; seleccionarFlujo: [clave: string] }>()
 
 const contenedor = ref<HTMLDivElement | null>(null)
 let cy: Core | null = null
@@ -53,14 +54,18 @@ function render() {
     .selector('node[?contexto]').style({ 'background-color': '#64748b' })
     .selector('edge[certeza = "PENDIENTE"]').style({ 'line-style': 'dashed', 'line-color': '#b45309', 'target-arrow-color': '#b45309' })
     .selector('edge[tipo = "VINCULO"]').style({ 'line-color': '#7c3aed', 'target-arrow-color': '#7c3aed', label: 'data(label)', 'font-size': 8 })
+    .selector('edge[tipo = "FLUJO"]').style({ width: 'data(grosor)', 'line-color': '#0f766e', 'target-arrow-color': '#0f766e', label: 'data(label)', 'font-size': 9 })
+    .selector('edge:selected').style({ 'line-color': '#b45309', 'target-arrow-color': '#b45309' })
     .selector('node:selected').style({ 'border-width': 3, 'border-color': '#f59e0b' }).update()
   cy.on('tap', 'node[tipo = "EVENTO"]', e => emit('seleccionar', e.target.data('clave')))
+  if (props.flujos) cy.on('tap', 'edge[tipo = "FLUJO"]', e => emit('seleccionarFlujo', e.target.id()))
   destacar()
   ajustar()
 }
 function destacar() {
-  cy?.nodes().unselect()
-  if (props.seleccionado) cy?.getElementById(`evento:${props.seleccionado}`).select()
+  if (props.flujos) cy?.edges().unselect()
+  else cy?.nodes().unselect()
+  if (props.seleccionado) cy?.getElementById(props.flujos ? props.seleccionado : `evento:${props.seleccionado}`).select()
 }
 
 function ajustar() { cy?.resize(); cy?.fit(undefined, 24) }
@@ -78,7 +83,9 @@ onBeforeUnmount(() => { observador?.disconnect(); cy?.destroy() })
 
 <template>
   <div class="controles"><button type="button" @click="ajustar">Ajustar grafo a la pantalla</button><span>Acerca con la rueda o dos dedos; arrastra para explorar.</span></div>
-  <div ref="contenedor" class="grafo-container" role="img" aria-label="Grafo de relaciones documentadas; cada evento también se puede seleccionar en la lista inferior"></div>
+  <div ref="contenedor" class="grafo-container" role="img" :aria-label="flujos
+    ? 'Grafo de traslados entre áreas. Los flujos también se pueden seleccionar en la tabla.'
+    : 'Grafo de relaciones documentadas; cada evento también se puede seleccionar en la lista inferior'"></div>
 </template>
 
 <style scoped>

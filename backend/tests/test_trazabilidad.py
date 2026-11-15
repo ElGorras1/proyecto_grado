@@ -130,6 +130,12 @@ def test_custodia_identifica_entrega_origen_venta_y_retorno(
     retorno = next(e for e in d["eventos"] if e["clase"] == "CUSTODIA_RETORNO")
     assert retorno["conexiones"][1]["ubicacion"] == f"area:{destino.id}"
     assert not retorno["afecta_stock_actual"]
+    recorrido = consulta(client, usuario_admin, articulo, evento=f"CUSTODIA_ENTREGA:{cid}")
+    assert recorrido["total"] == 3
+    assert recorrido["eventos"][0]["clave"] == f"CUSTODIA_ENTREGA:{cid}"
+    assert {e["clave"] for e in recorrido["eventos"]} == {e["clave"] for e in d["eventos"]}
+    assert client.get(f"/api/v1/kardex/articulos/{articulo.id}/trazabilidad",
+        headers=headers, params={"evento": "TRANSFERENCIA:99999"}).status_code == 404
 
 
 def test_base_enlaza_cierre_fijado_aunque_haya_nuevos_escaneos_y_paginacion(

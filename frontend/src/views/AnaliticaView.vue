@@ -6,6 +6,11 @@ import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import EvaluacionAnalitica from '@/components/EvaluacionAnalitica.vue'
 import ReglasHistoricas from '@/components/ReglasHistoricas.vue'
+import TrazabilidadArticulo from '@/components/TrazabilidadArticulo.vue'
+
+const props = defineProps<{ resultadoId?: number }>()
+const emit = defineEmits<{ revisado: []; cerrar: [] }>()
+const mostrarRecorrido = ref(false)
 import type { DiagnosticoAnalitica } from '@/services/analitica'
 import { GESTION_DOCUMENTAL_HASTA } from '@/config/alcance'
 
@@ -401,11 +406,14 @@ async function prepararTemporal() {
   }
 }
 function cerrarDetalle() {
+  if (props.resultadoId) emit('cerrar')
+  mostrarRecorrido.value = false
   solicitudDetalle++
   detalle.value = null
 }
 async function abrir(id: number) {
   if (guardando.value) return
+  mostrarRecorrido.value = false
   await cargarDetalle(id)
 }
 async function cargarDetalle(id: number) {
@@ -435,7 +443,8 @@ async function guardar() {
       revision_esperada: detalle.value.revision_numero,
     })
     if (numero === solicitudDetalle && !desmontado) await cargarDetalle(id)
-    if (version === seleccionado.value && !desmontado) await cargar(pagina.value)
+    if (props.resultadoId) emit('revisado')
+    else if (version === seleccionado.value && !desmontado) await cargar(pagina.value)
   } catch (e) {
     fallo(e)
   } finally {
@@ -454,6 +463,10 @@ async function cambiarPaginaModelos(delta: number) {
   }
 }
 onMounted(async () => {
+  if (props.resultadoId) {
+    await abrir(props.resultadoId)
+    return
+  }
   await actualizar()
   const resultado = Number(route.query.resultado_id)
   if (!desmontado && Number.isInteger(resultado) && resultado > 0) await abrir(resultado)
@@ -468,7 +481,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="analitica">
+  <component :is="resultadoId ? 'div' : 'main'" :class="{ analitica: !resultadoId }">
+    <template v-if="!resultadoId">
     <header>
       <div>
         <router-link to="/">← Inicio</router-link>
@@ -786,6 +800,8 @@ onUnmounted(() => {
         </button>
       </div>
     </section>
+    </template>
+    <p v-if="resultadoId && !detalle" :role="error ? 'alert' : 'status'">{{ error || 'Consultando evidencia…' }}</p>
     <section v-if="detalle" class="panel detalle" aria-label="Evidencia del hallazgo">
       <header>
         <h2>Movimiento #{{ detalle.movimiento_id }} · {{ detalle.snapshot.articulo }}</h2>
@@ -819,9 +835,13 @@ onUnmounted(() => {
           <router-link :to="{ path: '/kardex-digital', query: { articulo_id: detalle.articulo_id, tab: 'hil' } }">
             Revisar HIL de este artículo
           </router-link>
-          · <router-link :to="{ path: '/kardex-digital', query: { articulo_id: detalle.articulo_id, tab: 'grafo' } }">Ver trazabilidad de este artículo</router-link>
+          · <button type="button" :aria-expanded="mostrarRecorrido" @click="mostrarRecorrido = !mostrarRecorrido">
+            {{ mostrarRecorrido ? 'Ocultar recorrido' : 'Ver recorrido' }}
+          </button>
         </div>
       </div>
+      <TrazabilidadArticulo v-if="mostrarRecorrido" :articulo-id="detalle.articulo_id"
+        :evento="`HISTORICO:${detalle.movimiento_id}`" />
       <h3>Contexto en orden físico del corte</h3>
       <ol>
         <li v-for="v in detalle.vecinos" :key="v.id">
@@ -871,7 +891,7 @@ onUnmounted(() => {
         <p>{{ r.motivo }}</p>
       </article>
     </section>
-  </main>
+  </component>
 </template>
 
 <style scoped>

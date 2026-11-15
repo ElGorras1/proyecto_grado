@@ -3,6 +3,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
+import TrazabilidadArticulo from '@/components/TrazabilidadArticulo.vue'
+
+const props = defineProps<{ casoId?: number }>()
+const emit = defineEmits<{ revisado: [] }>()
 
 interface Operacion {
   clase: string
@@ -101,6 +105,16 @@ const pagina = ref(1)
 const catalogo = ref<{ id: number; nombre: string }[]>([])
 const revisores = ref<{ id: number; nombre: string; rol: string }[]>([])
 const detalle = ref<Detalle | null>(null)
+const mostrarRecorrido = ref(false)
+const eventoRecorrido = computed(() => {
+  const original = detalle.value?.actual
+  if (!original?.id) return undefined
+  const clase = ({
+    MOVIMIENTO: 'OPERACION', TRANSFERENCIA: 'TRANSFERENCIA', CUSTODIA: 'CUSTODIA_ENTREGA',
+    EVENTO_CUSTODIA: original.tipo === 'VENTA' ? 'CUSTODIA_VENTA' : 'CUSTODIA_RETORNO',
+  } as Record<string, string>)[original.clase]
+  return clase ? `${clase}:${original.id}` : undefined
+})
 const paginaHistorial = ref(1)
 const cargando = ref(false)
 const abriendo = ref(false)
@@ -147,6 +161,7 @@ function cerrarDetalle() {
   consultaDetalle++
   consultaHistorial++
   detalle.value = null
+  mostrarRecorrido.value = false
   abriendo.value = false
   cargandoHistorial.value = false
 }
@@ -250,6 +265,7 @@ async function abrir(id: number, conservarMotivo = false) {
   consultaHistorial++
   cargandoHistorial.value = false
   abriendo.value = true
+  mostrarRecorrido.value = false
   error.value = ''
   exito.value = ''
   const anotacion = conservarMotivo ? decision.value.motivo : ''
@@ -324,7 +340,8 @@ async function guardar() {
     })
     preparar(data)
     exito.value = 'Decisión registrada. El inventario conserva sus cantidades.'
-    await cargar()
+    if (props.casoId) emit('revisado')
+    else await cargar()
   } catch (err: any) {
     desactualizado.value = err.response?.status === 409
     error.value = mensaje(
@@ -336,6 +353,19 @@ async function guardar() {
   }
 }
 onMounted(async () => {
+  if (props.casoId) {
+    if (puedeRevisar.value) {
+      try {
+        const { data } = await api.get('/control-alertas/revisores')
+        if (desmontado) return
+        revisores.value = data
+      } catch {
+        errorCatalogos.value = 'No se pudo cargar la lista de revisores.'
+      }
+    }
+    if (!desmontado) await abrir(props.casoId)
+    return
+  }
   try {
     const [a, r] = await Promise.all([
       api.get('/kardex/articulos'),
@@ -357,7 +387,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="bandeja">
+  <component :is="casoId ? 'div' : 'main'" :class="casoId ? 'bandeja integrada' : 'bandeja'">
+    <template v-if="!casoId">
     <router-link to="/">Volver al inicio</router-link>
     <h1>Alertas de inventario</h1>
     <p>
@@ -367,9 +398,11 @@ onMounted(async () => {
     <p class="enlaces">
       <router-link to="/analitica">Auditoría histórica con Isolation Forest</router-link>
     </p>
+    </template>
     <p v-if="error" class="alert alert-error" role="alert">{{ error }}</p>
     <p v-if="errorCatalogos" class="alert alert-error" role="alert">{{ errorCatalogos }}</p>
     <p v-if="exito" class="alert alert-success" role="status">{{ exito }}</p>
+    <template v-if="!casoId">
     <form class="filtros" aria-label="Filtrar alertas" @submit.prevent="filtrar">
       <label
         >Estado<select v-model="filtros.estado" aria-label="Estado del caso">
@@ -429,8 +462,9 @@ onMounted(async () => {
     <p v-else-if="!error && !filas.length" class="vacio">
       No hay casos para estos filtros. Los avisos confirmados en nuevas operaciones aparecerán aquí.
     </p>
-    <div class="columnas">
-      <section aria-label="Lista de alertas">
+    </template>
+    <div :class="{ columnas: !casoId }">
+      <section v-if="!casoId" aria-label="Lista de alertas">
         <button
           v-for="c in filas"
           :key="c.id"
@@ -470,6 +504,10 @@ onMounted(async () => {
             {{ textoPrioridad(detalle.prioridad) }}
           </p>
         </header>
+        <button v-if="eventoRecorrido" type="button" :aria-expanded="mostrarRecorrido"
+          @click="mostrarRecorrido = !mostrarRecorrido">{{ mostrarRecorrido ? 'Ocultar recorrido' : 'Ver recorrido' }}</button>
+        <TrazabilidadArticulo v-if="mostrarRecorrido && eventoRecorrido" :articulo-id="detalle.articulo_id"
+          :evento="eventoRecorrido" />
         <p>Revisor: {{ detalle.asignado_nombre || 'Sin asignar' }}</p>
         <h3>Operación y evidencia</h3>
         <p>
@@ -676,7 +714,7 @@ onMounted(async () => {
         </section>
       </section>
     </div>
-  </main>
+  </component>
 </template>
 
 <style scoped>
@@ -685,6 +723,7 @@ onMounted(async () => {
   margin: auto;
   padding: 2rem 1.5rem;
 }
+.bandeja.integrada { padding: 0; }
 h1 {
   margin: 1rem 0 0.6rem;
 }

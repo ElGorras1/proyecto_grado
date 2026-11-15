@@ -669,6 +669,7 @@ def get_articulos_typeahead(
 @router.get("/errores")
 def get_errores_human_in_the_loop(
     articulo_id: Optional[int] = None,
+    movimiento_id: int | None = Query(None, gt=0),
     tipo: Optional[Literal["saldo", "fecha", "area", "referencia"]] = None,
     tanda: Optional[int] = Query(None, ge=1, le=9999),
     tratamiento: Optional[Literal["POR_CATEGORIZAR", "CATEGORIZADO_CON_MARCA", "REQUIERE_RECATEGORIZAR"]] = None,
@@ -686,6 +687,8 @@ def get_errores_human_in_the_loop(
         query = query.join(LoteCarga, LoteCarga.id == MovimientoKardex.lote_id).filter(LoteCarga.tanda == tanda)
     if articulo_id:
         query = query.filter(MovimientoKardex.articulo_id == articulo_id)
+    if movimiento_id is not None:
+        query = query.filter(MovimientoKardex.id == movimiento_id)
         
     if tipo:
         condiciones = {"saldo": MovimientoKardex.tiene_error_saldo.is_(True),

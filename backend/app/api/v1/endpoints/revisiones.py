@@ -21,6 +21,12 @@ from app.services.tratamiento_hil import resumen_tratamiento
 router = APIRouter(prefix="/revisiones", tags=["Revisiones y alertas"])
 lector = require_roles("Administrador", "Auditor", "Operador")
 ABIERTOS = ("PENDIENTE", "EN_REVISION", "REQUIERE_SEGUIMIENTO")
+MOTIVOS_DOCUMENTALES = {
+    "saldo": "Saldo escrito y cálculo requieren cotejo.",
+    "fecha": "Fecha pendiente de cotejo.",
+    "area": "Área o destino pendiente de confirmación.",
+    "referencia": "Referencia pendiente de cotejo.",
+}
 
 
 @router.get("/pendientes")
@@ -61,6 +67,7 @@ def pendientes(
                 codigo=a.codigo,
                 fecha=m.fecha_movimiento.isoformat() if fecha_asignable(m) else None,
                 descripcion=m.detalle,
+                motivos=[MOTIVOS_DOCUMENTALES[t] for t in tratamiento["avisos_conservados"]],
                 estado=tratamiento["etiqueta"],
                 prioridad="ALTA" if m.tiene_error_saldo else "MEDIA",
                 score=None,
@@ -149,7 +156,9 @@ def pendientes(
                 articulo=a.nombre,
                 codigo=a.codigo,
                 fecha=creado.astimezone(ZoneInfo("America/La_Paz")).date().isoformat(),
-                descripcion=" · ".join(c.codigos),
+                descripcion=c.snapshot.get("tipo") or "Operación de inventario",
+                motivos=[a["mensaje"] for a in c.snapshot.get("alertas", [])],
+                asignado_nombre=c.asignado_nombre,
                 estado=c.estado,
                 prioridad=c.prioridad,
                 score=None,

@@ -60,7 +60,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 function montar() {
-  return mount(AnaliticaView, { global: { stubs: { RouterLink: RouterLinkStub, ReglasHistoricas: true } } })
+  return mount(AnaliticaView, { global: { stubs: { RouterLink: RouterLinkStub, ReglasHistoricas: true, TrazabilidadArticulo: true } } })
 }
 describe('Auditoría histórica', () => {
   it('enlaza HIL y grafo conservando la identidad del artículo del hallazgo', async () => {
@@ -79,8 +79,11 @@ describe('Auditoría histórica', () => {
     const enlaces = w.findAllComponents(RouterLinkStub).filter(l => l.text().includes('este artículo'))
     expect(enlaces.map(l => l.props('to'))).toEqual([
       { path: '/kardex-digital', query: { articulo_id: 7, tab: 'hil' } },
-      { path: '/kardex-digital', query: { articulo_id: 7, tab: 'grafo' } },
     ])
+    await w.findAll('button').find(b => b.text() === 'Ver recorrido')!.trigger('click')
+    expect(w.get('trazabilidad-articulo-stub').attributes()).toMatchObject({
+      articuloid: '7', evento: 'HISTORICO:99',
+    })
     expect(post).not.toHaveBeenCalled()
     w.unmount()
   })

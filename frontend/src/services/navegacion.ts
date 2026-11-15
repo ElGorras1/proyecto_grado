@@ -6,10 +6,8 @@ export const espacios = [
 ]
 
 export const secciones: Record<string, { ruta: string; titulo: string }[]> = {
-  articulosInventario: [{ ruta: 'kardexDigital', titulo: 'Artículos y Kárdex' }, { ruta: 'inventarioVivo', titulo: 'Operaciones de inventario' }],
-  revisiones: [{ ruta: 'revisiones', titulo: 'Pendientes' }, { ruta: 'analitica', titulo: 'Consulta del análisis histórico' }, { ruta: 'alertasInventario', titulo: 'Seguimiento operativo' }],
-  reportes: [{ ruta: 'reporteInventario', titulo: 'Movimientos' }, { ruta: 'gestionInstitucional', titulo: 'Resumen' }, { ruta: 'cierresGestion', titulo: 'Balance y cierre de gestión' }],
-  administracion: [{ ruta: 'administracion', titulo: 'Administración' }, { ruta: 'areasCatalogos', titulo: 'Áreas y equivalencias' }],
+  articulosInventario: [{ ruta: 'kardexDigital', titulo: 'Artículos y Kárdex' }, { ruta: 'inventarioVivo', titulo: 'Operaciones' }],
+  reportes: [{ ruta: 'gestionInstitucional', titulo: 'Resumen' }, { ruta: 'reporteInventario', titulo: 'Movimientos' }, { ruta: 'cierresGestion', titulo: 'Cierres' }],
 }
 
 export function espacioDe(ruta: unknown) {

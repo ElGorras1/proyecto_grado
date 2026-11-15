@@ -4,6 +4,7 @@ import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import { useRoute, useRouter } from 'vue-router'
 import { GESTION_DOCUMENTAL_HASTA } from '@/config/alcance'
+import ResumenPorArea from '@/components/ResumenPorArea.vue'
 const props = withDefaults(defineProps<{ seccion?: 'resumen' | 'cierres' | 'completo' }>(), { seccion: 'completo' })
 const titulo = computed(() => props.seccion === 'cierres' ? 'Balance y cierre de gestión' : props.seccion === 'resumen' ? 'Resumen institucional' : 'Informe institucional y cierres anuales')
 
@@ -20,6 +21,11 @@ interface Evento {
   id: number
   clase: string
   articulo: string
+  articulo_id: number
+  area_origen_id?: number | null
+  area_destino_id?: number | null
+  documento?: string | null
+  estado?: string
   fecha_registro: string
   fecha_operacion: string
   ingreso: number
@@ -63,6 +69,7 @@ interface Informe {
   limites: string
   inventario_actual: Saldo[]
   movimientos: Evento[]
+  areas_operativas?: { id: number; nombre: string; entradas: number; salidas: number; custodia_actual: number; alertas_abiertas: number }[]
   totales_actuales: {
     operativo: number
     documental_sin_activar: number
@@ -94,6 +101,7 @@ const informe = ref<Informe | null>(null),
 const cierres = ref<Cierre[]>([]),
   totalCierres = ref(0),
   paginaCierres = ref(1)
+const consultarAreas = ref(false)
 const cargando = ref(false),
   enviando = ref(false),
   error = ref(''),
@@ -290,6 +298,12 @@ onMounted(cargar)
     </p>
     <template v-if="informe">
       <p>Generado: {{ fecha(informe.generado_en) }} · Gestión documental consultada: {{ informe.gestion }}.</p>
+      <details v-if="informe.areas_operativas" class="panel"
+        @toggle="consultarAreas = ($event.currentTarget as HTMLDetailsElement).open">
+        <summary>Actividad por área</summary>
+        <ResumenPorArea v-if="consultarAreas" :key="informe.gestion"
+          :areas="informe.areas_operativas" :movimientos="informe.movimientos" />
+      </details>
       <section class="panel">
         <h2>Documentos históricos de {{ informe.gestion }}</h2>
         <p>

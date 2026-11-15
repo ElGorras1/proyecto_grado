@@ -29,13 +29,14 @@ interface Datos {
   ubicaciones: { id: string; label: string }[]; criterio: string; avisos: string[];
   integridad_libro: boolean | null;
 }
-const props = withDefaults(defineProps<{ articuloId: number; ambitoInicial?: string }>(), { ambitoInicial: 'TODOS' })
+const props = withDefaults(defineProps<{ articuloId: number; ambitoInicial?: string; evento?: string }>(), { ambitoInicial: 'TODOS' })
 const filtros = ref({ ambito: props.ambitoInicial, desde: '', hasta: '', ubicacion: '', tanda: '', relacion: '', sin_fecha: '' })
 watch(() => filtros.value.sin_fecha, valor => {
   if (valor) { filtros.value.desde = ''; filtros.value.hasta = '' }
 })
 const tandas = ref([1, 2, 3])
 onMounted(async () => {
+  if (props.evento) return
   try {
     const resumen = (await api.get('/kardex/tandas')).data
     if (Array.isArray(resumen.tandas)) tandas.value = resumen.tandas.map((t: { id: number }) => t.id)
@@ -78,29 +79,30 @@ async function cargar(reiniciar = false) {
     const params = Object.fromEntries(Object.entries(filtros.value).filter(([, valor]) => valor !== ''))
     if (params.ambito !== 'HISTORICO') delete params.tanda
     const respuesta = await api.get(`/kardex/articulos/${props.articuloId}/trazabilidad`, {
-      params: { ...params, offset: offset.value, limite }, signal: actual.signal,
+      params: { ...params, evento: props.evento, offset: offset.value, limite }, signal: actual.signal,
     })
     if (actual.signal.aborted) return
     const d = respuesta.data as Datos
     if (!Array.isArray(d.eventos) || !Array.isArray(d.nodes) || !Array.isArray(d.links) || !Array.isArray(d.contexto))
       throw new Error('Respuesta incompleta')
     datos.value = d
-    seleccionado.value = d.eventos[0]?.clave ?? null
+    seleccionado.value = d.eventos.find(e => e.clave === props.evento)?.clave ?? d.eventos[0]?.clave ?? null
   } catch {
     if (!actual.signal.aborted) error.value = 'No se pudo consultar la trazabilidad. Vuelve a intentar.'
   } finally { if (!actual.signal.aborted) cargando.value = false }
 }
 function pagina(delta: number) { offset.value = Math.max(0, offset.value + delta * limite); cargar() }
 function verImagen(ruta: string) { errorImagen.value = false; imagen.value = ruta }
-watch(() => props.articuloId, () => { filtros.value = { ambito: props.ambitoInicial, desde: '', hasta: '', ubicacion: '', tanda: '', relacion: '', sin_fecha: '' }; cargar(true) }, { immediate: true })
+watch([() => props.articuloId, () => props.evento], () => { filtros.value = { ambito: props.ambitoInicial, desde: '', hasta: '', ubicacion: '', tanda: '', relacion: '', sin_fecha: '' }; cargar(true) }, { immediate: true })
 onBeforeUnmount(() => controlador?.abort())
 </script>
 
 <template>
   <section class="trazabilidad" aria-label="Trazabilidad por artículo">
-    <h3>Trazabilidad por artículo</h3>
-    <p>Selecciona un evento para consultar sus ubicaciones, vínculos y respaldo. El Kárdex escaneado conserva el registro de auditoría.</p>
-    <form class="filtros" @submit.prevent="cargar(true)">
+    <h3>{{ evento ? 'Recorrido del movimiento' : 'Trazabilidad por artículo' }}</h3>
+    <p v-if="evento">Se muestran el movimiento seleccionado y los eventos con un vínculo registrado.</p>
+    <p v-else>Selecciona un evento para consultar sus ubicaciones, vínculos y respaldo. El Kárdex escaneado conserva el registro de auditoría.</p>
+    <form v-if="!evento" class="filtros" @submit.prevent="cargar(true)">
       <label>Fechas<select v-model="filtros.sin_fecha" aria-label="Fechas de trazabilidad"><option value="">Todas</option><option value="true">Sin fecha confirmada</option></select></label>
       <label>Registros<select v-model="filtros.ambito" aria-label="Ámbito de trazabilidad"><option value="TODOS">Histórico y operativo</option><option value="HISTORICO">Kárdex escaneado</option><option value="OPERATIVO">Inventario vivo y antecedentes</option></select></label>
       <label>Desde<input v-model="filtros.desde" aria-label="Fecha desde" type="date" :disabled="!!filtros.sin_fecha" /></label>
@@ -113,13 +115,14 @@ onBeforeUnmount(() => controlador?.abort())
     <p v-if="cargando" role="status">Consultando trazabilidad…</p>
     <p v-else-if="error" role="alert">{{ error }} <button @click="cargar()">Reintentar</button></p>
     <template v-else-if="datos">
-      <p>{{ datos.total }} eventos en esta consulta · {{ datos.pendientes }} con datos de ubicación por confirmar.</p>
+      <p>{{ datos.total }} {{ datos.total === 1 ? 'evento' : 'eventos' }} en esta consulta · {{ datos.pendientes }} con datos de ubicación por confirmar.</p>
       <p v-if="datos.integridad_libro === false" role="alert">El libro operativo no coincide con el saldo vigente. Solicita revisión.</p>
       <p class="criterio">{{ datos.criterio }}</p>
       <p class="leyenda">Línea continua: relación explícita registrada o revisada. Línea discontinua: dato pendiente o clasificación automática. Línea violeta: devolución, rectificación o respaldo de origen. El saldo documental no representa un almacén físico.</p>
       <p v-for="aviso in datos.avisos" :key="aviso" role="alert">{{ aviso }}</p>
       <p v-if="!datos.eventos.length">No hay eventos que coincidan con estos filtros.</p>
-      <template v-else>
+      <p v-else-if="evento && datos.total === 1">Este evento no tiene otras operaciones vinculadas.</p>
+      <template v-if="datos.eventos.length">
         <GrafoTrazabilidad :elementos="elementos" :seleccionado="seleccionado" @seleccionar="seleccionar" />
         <p v-if="datos.contexto.length" class="criterio">{{ datos.contexto.length }} respaldo(s) de origen fuera de esta página o filtro se muestran en gris para conservar el vínculo.</p>
         <div class="navegacion"><button :disabled="offset === 0" @click="pagina(-1)">Anterior</button><span>{{ offset + 1 }}–{{ offset + datos.eventos.length }} de {{ datos.total }}</span><button :disabled="offset + limite >= datos.total" @click="pagina(1)">Siguiente</button></div>
