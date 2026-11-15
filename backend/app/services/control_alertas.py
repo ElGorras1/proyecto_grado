@@ -7,6 +7,8 @@ from app.models.control_alertas import CasoControl
 from app.models.kardex import MovimientoKardex
 from app.models.inventario import TransferenciaArea, CustodiaExterna, EventoCustodiaExterna
 
+CODIGO_ISOLATION_OPERATIVO = "ISOLATION_OPERATIVO"
+
 ORIGENES = {
     "MOVIMIENTO": (MovimientoKardex, "movimiento_id"),
     "TRANSFERENCIA": (TransferenciaArea, "transferencia_id"),

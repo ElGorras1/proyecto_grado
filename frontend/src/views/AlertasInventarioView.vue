@@ -574,7 +574,10 @@ onMounted(async () => {
         <ul class="avisos">
           <li v-for="a in detalle.operacion.alertas" :key="a.codigo">
             <strong>{{ a.mensaje }}</strong
-            ><span>Nivel {{ a.nivel }} · {{ a.codigo }}</span>
+            ><span>{{ a.codigo === 'ISOLATION_OPERATIVO' ? 'Isolation Forest operativo' : 'Regla de inventario' }} · Nivel {{ a.nivel }}</span>
+            <p v-if="a.codigo === 'ISOLATION_OPERATIVO' && typeof a.datos.score === 'number' && typeof a.datos.umbral === 'number'">
+              Puntuación {{ a.datos.score.toFixed(4) }} · Umbral {{ a.datos.umbral.toFixed(4) }}
+            </p>
             <details>
               <summary>Datos que originaron el aviso</summary>
               <pre>{{ JSON.stringify(a.datos, null, 2) }}</pre>

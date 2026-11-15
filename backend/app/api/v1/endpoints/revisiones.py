@@ -14,6 +14,7 @@ from app.models.control_alertas import CasoControl
 from app.models.kardex import MovimientoKardex
 from app.services.automatizacion_analitica import modelo_referencia, elegibles_del_corte
 from app.services.calidad_kardex import pendiente_hil_sql
+from app.services.control_alertas import CODIGO_ISOLATION_OPERATIVO
 from app.services.datos_analitica import huella, leer_corte
 from app.services.fechas_documentales import fecha_asignable
 from app.services.tratamiento_hil import resumen_tratamiento
@@ -32,6 +33,7 @@ MOTIVOS_DOCUMENTALES = {
 @router.get("/pendientes")
 def pendientes(
     origen: Literal["TODOS", "HIL", "MODELO", "OPERATIVO"] = "TODOS",
+    deteccion: Literal["ISOLATION_FOREST", "REGLA_INVENTARIO"] | None = None,
     gestion: int | None = Query(None, ge=1900, le=9998),
     sin_fecha: bool = False,
     articulo: str = Query("", max_length=150),
@@ -147,9 +149,18 @@ def pendientes(
             if c.creado_en.tzinfo is None
             else c.creado_en
         )
+        alertas = c.snapshot.get("alertas", [])
+        codigos = set(c.codigos or ())
+        codigos.update(a["codigo"] for a in alertas)
+        detecciones = []
+        if CODIGO_ISOLATION_OPERATIVO in codigos:
+            detecciones.append("ISOLATION_FOREST")
+        if codigos - {CODIGO_ISOLATION_OPERATIVO}:
+            detecciones.append("REGLA_INVENTARIO")
         filas.append(
             dict(
                 tipo="OPERATIVO",
+                detecciones=detecciones,
                 origen="OPERATIVO",
                 id=c.id,
                 articulo_id=a.id,
@@ -157,7 +168,7 @@ def pendientes(
                 codigo=a.codigo,
                 fecha=creado.astimezone(ZoneInfo("America/La_Paz")).date().isoformat(),
                 descripcion=c.snapshot.get("tipo") or "Operación de inventario",
-                motivos=[a["mensaje"] for a in c.snapshot.get("alertas", [])],
+                motivos=[a["mensaje"] for a in alertas if a.get("mensaje")],
                 asignado_nombre=c.asignado_nombre,
                 estado=c.estado,
                 prioridad=c.prioridad,
@@ -178,7 +189,12 @@ def pendientes(
         and (gestion is None or f["fecha"] and int(f["fecha"][:4]) == gestion)
     ]
     conteos = Counter(f["origen"] for f in filtradas)
-    filtradas = [f for f in filtradas if origen == "TODOS" or f["origen"] == origen]
+    conteos_deteccion = Counter(d for f in filtradas for d in f.get("detecciones", []))
+    filtradas = [
+        f for f in filtradas
+        if (origen == "TODOS" or f["origen"] == origen)
+        and (deteccion is None or deteccion in f.get("detecciones", []))
+    ]
     filtradas.sort(
         key=lambda f: (
             {"ALTA": 0, "MEDIA": 1, "BAJA": 2}[f["prioridad"]],
@@ -194,6 +210,7 @@ def pendientes(
         pagina=pagina,
         limite=limite,
         conteos={k: conteos[k] for k in ("HIL", "MODELO", "OPERATIVO")},
+        conteos_deteccion={k: conteos_deteccion[k] for k in ("ISOLATION_FOREST", "REGLA_INVENTARIO")},
         gestiones=gestiones,
         filas=filtradas[inicio : inicio + limite],
         modelo_base_id=modelo.id if modelo else None,

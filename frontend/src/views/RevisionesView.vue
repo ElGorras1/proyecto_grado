@@ -8,12 +8,18 @@ import RevisionHil from '@/components/RevisionHil.vue'
 
 const AnaliticaView = defineAsyncComponent(() => import('./AnaliticaView.vue'))
 const AlertasInventarioView = defineAsyncComponent(() => import('./AlertasInventarioView.vue'))
-interface Aviso { tipo: string; origen: string; id: number; articulo_id: number; articulo: string; codigo: string; fecha: string | null; descripcion: string; motivos?: string[]; asignado_nombre?: string | null; estado: string; prioridad: string; score: number | null; destino: { path: string; query: Record<string, string | number> } | null }
-interface Bandeja { total: number; pagina: number; limite: number; conteos: Record<string, number>; gestiones: number[]; filas: Aviso[]; alcance: string }
+interface Aviso { tipo: string; origen: string; id: number; articulo_id: number; articulo: string; codigo: string; fecha: string | null; descripcion: string; motivos?: string[]; detecciones?: Deteccion[]; asignado_nombre?: string | null; estado: string; prioridad: string; score: number | null; destino: { path: string; query: Record<string, string | number> } | null }
+type Deteccion = 'ISOLATION_FOREST' | 'REGLA_INVENTARIO'
+interface Bandeja { total: number; pagina: number; limite: number; conteos: Record<string, number>; conteos_deteccion: Record<Deteccion, number>; gestiones: number[]; filas: Aviso[]; alcance: string }
 interface Seguimiento { id: number; articulo_id: number; movimiento_id: number; score: number; umbral: number; estado_revision: string; revision_numero: number; datos_cambiaron: boolean; snapshot: { articulo: string; detalle: string; fecha: string; ingresos: number | null; salidas: number | null; ruta_imagen_respaldo: string | null }; contexto: { indicadores: string[] }; revisiones: { id: number; usuario: string; estado: string; motivo: string }[] }
 const auth = useAuthStore(), route = useRoute()
-const filtros = ref({ origen: 'TODOS', gestion: '', articulo: '', incluir_tratados: false })
-if (route.query.sin_fecha === '1') filtros.value.gestion = 'SIN_FECHA'
+const gestionVigente = new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', year: 'numeric' }).format(new Date())
+const gestionSolicitada = route.query.gestion
+const gestionInicial = route.query.sin_fecha === '1' ? 'SIN_FECHA'
+  : typeof gestionSolicitada === 'string' && /^\d{4}$/.test(gestionSolicitada)
+      && Number(gestionSolicitada) >= 1900 && Number(gestionSolicitada) <= 9998
+    ? gestionSolicitada : gestionVigente
+const filtros = ref({ origen: 'TODOS', gestion: gestionInicial, articulo: '', incluir_tratados: false })
 const aplicados = ref({ ...filtros.value })
 const datos = ref<Bandeja | null>(null), detalle = ref<Seguimiento | null>(null)
 const seleccionado = ref<Aviso | null>(null)
@@ -26,6 +32,14 @@ const estadoAutomatico = ref<{ configurada: boolean; habilitada: boolean; ultimo
 const revision = ref({ estado: 'EN_REVISION', etiqueta: 'NO_CONCLUYENTE', motivo: '' })
 const puedeRevisar = computed(() => ['Administrador', 'Auditor'].includes(auth.rol ?? ''))
 const puedeCorregirHil = computed(() => ['Administrador', 'Operador'].includes(auth.rol ?? ''))
+const gestiones = computed(() => [...new Set([
+  Number(gestionVigente),
+  ...(datos.value?.gestiones ?? []),
+  ...[filtros.value.gestion, aplicados.value.gestion].map(Number).filter(g => g > 0),
+])].sort((a, b) => b - a))
+const detecciones: Record<Deteccion, string> = {
+  ISOLATION_FOREST: 'Isolation Forest operativo', REGLA_INVENTARIO: 'Regla de inventario',
+}
 const nombres: Record<string, string> = { HIL: 'Revisión documental', HISTORICO: 'Aviso del corte histórico', SEGUIMIENTO: 'Análisis automático', OPERATIVO: 'Control de inventario' }
 const estados: Record<string, string> = { PENDIENTE: 'Pendiente', EN_REVISION: 'En revisión', REQUIERE_SEGUIMIENTO: 'Requiere seguimiento', SEGUIMIENTO: 'En seguimiento', JUSTIFICADO: 'Justificado', CERRADO: 'Cerrado' }
 const cambiosPendientes = computed(() => JSON.stringify(filtros.value) !== JSON.stringify(aplicados.value))
@@ -88,8 +102,9 @@ async function cargar(pagina = 1, nuevos = false) {
   if (nuevos) { cerrar(); mensaje.value = '' }
   cargando.value = true; error.value = ''
   try {
+    const deteccion = f.origen === 'ISOLATION_FOREST' || f.origen === 'REGLA_INVENTARIO' ? f.origen : undefined
     const { data } = await api.get<Bandeja>('/revisiones/pendientes', { params: {
-      origen: f.origen, gestion: f.gestion && f.gestion !== 'SIN_FECHA' ? Number(f.gestion) : undefined,
+      origen: deteccion ? 'OPERATIVO' : f.origen, deteccion, gestion: f.gestion && f.gestion !== 'SIN_FECHA' ? Number(f.gestion) : undefined,
       sin_fecha: f.gestion === 'SIN_FECHA', articulo: f.articulo.trim() || undefined, incluir_tratados: f.incluir_tratados, pagina, limite: 30,
     } })
     if (turno !== consulta) return
@@ -138,16 +153,22 @@ onMounted(async () => {
 <template>
   <main class="revisiones">
     <header><div><h1>Revisiones y alertas</h1><p>Consulta los pendientes y abre la evidencia del artículo para resolverlos.</p></div><button class="btn-outline" :disabled="cargando" @click="cargar()">Actualizar pendientes</button></header>
-    <p v-if="estadoAutomatico?.configurada && estadoAutomatico.habilitada">El análisis de datos nuevos se comprueba automáticamente. No necesitas iniciar un entrenamiento.</p>
-    <p v-if="estadoAutomatico?.ultimo_error" role="status" class="nota">El último análisis automático necesita atención de mantenimiento. Los resultados anteriores siguen disponibles.</p>
     <details class="consultas">
       <summary>Consultas de auditoría</summary>
+      <p v-if="estadoAutomatico?.configurada && estadoAutomatico.habilitada">El seguimiento histórico revisa automáticamente los cambios del Kárdex.</p>
+      <p v-if="estadoAutomatico?.ultimo_error" role="status" class="nota">El último seguimiento histórico necesita atención de mantenimiento.</p>
       <router-link :to="{ name: 'analitica' }">Resultados históricos por gestión</router-link>
       <router-link :to="{ name: 'alertasInventario' }">Historial y filtros de casos operativos</router-link>
+      <router-link v-if="auth.rol === 'Administrador'" :to="{ name: 'analiticaOperativa' }">Estado del modelo para operaciones digitales</router-link>
     </details>
     <form class="filtros" @submit.prevent="cargar(1, true)">
-      <label>Origen<select v-model="filtros.origen" aria-label="Origen del aviso"><option value="TODOS">Todos</option><option value="HIL">Revisión documental</option><option value="MODELO">Análisis del modelo</option><option value="OPERATIVO">Controles de inventario</option></select></label>
-      <label>Gestión<select v-model="filtros.gestion" aria-label="Gestión del aviso"><option value="">Todas las gestiones</option><option v-for="g in datos?.gestiones ?? []" :key="g" :value="String(g)">{{ g }}</option><option value="SIN_FECHA">Sin fecha completa</option></select></label>
+      <label>Origen<select v-model="filtros.origen" aria-label="Origen del aviso">
+        <option value="TODOS">Todos</option>
+        <option v-for="(nombre, tipo) in detecciones" :key="tipo" :value="tipo">{{ nombre }}</option>
+        <option value="HIL">Revisión documental</option>
+        <option value="MODELO">Análisis histórico</option>
+      </select></label>
+      <label>Gestión<select v-model="filtros.gestion" aria-label="Gestión del aviso"><option value="">Todas las gestiones</option><option v-for="g in gestiones" :key="g" :value="String(g)">{{ g }}</option><option value="SIN_FECHA">Sin fecha completa</option></select></label>
       <label>Artículo o código<input v-model="filtros.articulo" aria-label="Artículo de la revisión" type="search" maxlength="150" /></label>
       <label class="check"><input v-model="filtros.incluir_tratados" type="checkbox" /> Incluir avisos documentales ya categorizados</label>
       <button class="btn-primary" :disabled="cargando">Aplicar filtros</button>
@@ -155,11 +176,19 @@ onMounted(async () => {
     <p v-if="cambiosPendientes" role="status">Hay filtros sin aplicar; la lista conserva la consulta anterior.</p>
     <p v-if="cargando" role="status">Consultando pendientes…</p><p v-if="error" role="alert" class="error">{{ error }}</p><p v-if="mensaje" role="status">{{ mensaje }}</p>
     <template v-if="datos">
-      <div class="resumen"><div><strong>{{ datos.conteos.HIL ?? 0 }}</strong><span>Documentales</span></div><div><strong>{{ datos.conteos.MODELO ?? 0 }}</strong><span>Del modelo</span></div><div><strong>{{ datos.conteos.OPERATIVO ?? 0 }}</strong><span>De inventario</span></div></div>
+      <div class="resumen">
+        <div v-for="(nombre, tipo) in detecciones" :key="tipo"><strong>{{ datos.conteos_deteccion?.[tipo] ?? 0 }}</strong><span>{{ nombre }}</span></div>
+        <div><strong>{{ datos.conteos.HIL ?? 0 }}</strong><span>Documentales</span></div>
+        <div><strong>{{ datos.conteos.MODELO ?? 0 }}</strong><span>Del análisis histórico</span></div>
+      </div>
       <p>{{ datos.alcance }}</p>
       <div class="tabla" tabindex="0" aria-label="Bandeja de revisiones"><table><thead><tr><th>Origen y prioridad</th><th>Artículo y evidencia</th><th>Fecha</th><th>Estado</th><th>Revisar</th></tr></thead><tbody>
         <tr v-for="f in datos.filas" :key="f.tipo + ':' + f.id">
-          <td><strong>{{ nombres[f.tipo] }}</strong><small>Prioridad {{ f.prioridad.toLowerCase() }}</small></td>
+          <td>
+            <strong v-if="!f.detecciones?.length">{{ nombres[f.tipo] }}</strong>
+            <strong v-for="tipo in f.detecciones" :key="tipo" class="origen-aviso">{{ detecciones[tipo] }}</strong>
+            <small>Prioridad {{ f.prioridad.toLowerCase() }}</small>
+          </td>
           <td><strong>{{ f.articulo }}</strong><small>{{ f.codigo }} · {{ f.descripcion }}</small>
             <ul v-if="f.motivos?.length"><li v-for="motivo in f.motivos" :key="motivo">{{ motivo }}</li></ul>
           </td>
@@ -206,7 +235,7 @@ onMounted(async () => {
 .revisiones { max-width: 1250px; margin: auto; padding: 1.5rem 1.25rem; } header,.paginacion { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .75rem; }
 .consultas { margin: 1rem 0; } .consultas summary { cursor: pointer; } .consultas a { display: block; margin: .5rem 0; }
 .filtros,.decision { display: flex; flex-wrap: wrap; align-items: end; gap: .85rem; padding: 1rem 0; } label { display: flex; flex-direction: column; gap: .35rem; flex: 1 1 170px; } .check { flex-direction: row; align-items: center; } input,select,textarea { width: 100%; padding: .6rem; border: 1px solid var(--border-color); border-radius: 6px; } .check input { width: auto; }
-.resumen { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; } .resumen div { padding: 1rem; border: 1px solid var(--border-color); border-radius: 8px; min-width: 130px; } .resumen strong,.resumen span,small { display: block; } .resumen strong { font-size: 1.6rem; } small { color: var(--text-secondary); margin-top: .4rem; line-height: 1.5; }
+.resumen { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; } .resumen div { padding: 1rem; border: 1px solid var(--border-color); border-radius: 8px; min-width: 130px; } .resumen strong,.resumen span,.origen-aviso,small { display: block; } .resumen strong { font-size: 1.6rem; } small { color: var(--text-secondary); margin-top: .4rem; line-height: 1.5; }
 .tabla { overflow-x: auto; } table { width: 100%; border-collapse: collapse; min-width: 700px; } th,td { padding: .8rem; border-bottom: 1px solid var(--border-color); text-align: left; vertical-align: top; } td:nth-child(2) { max-width: 390px; overflow-wrap: anywhere; } .paginacion { margin: 1rem 0; } .error { color: #a12222; } .nota { padding: .8rem; background: #fff5da; }
 .detalle { border: 1px solid var(--border-color); border-radius: 8px; padding: 1.25rem; margin-top: 1rem; } .evidencia { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; } img { max-width: 100%; max-height: 600px; object-fit: contain; } .decision textarea { min-height: 100px; }
 @media(max-width: 650px) { .evidencia { grid-template-columns: 1fr; } .revisiones { padding: 1rem .75rem; } .resumen div { min-width: 0; flex: 1; padding: .65rem; } }

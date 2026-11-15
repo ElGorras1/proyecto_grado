@@ -149,11 +149,44 @@ def test_modelo_se_activa_y_predice_en_transaccion_sin_reentrenar(
     r = db_session.query(ResultadoOperativo).one()
     assert r.alerta
     assert r.contexto["referencias"] == 100
-    assert db_session.query(CasoControl).one().codigos == ["ISOLATION_OPERATIVO"]
+    caso = db_session.query(CasoControl).one()
+    assert caso.codigos == ["ISOLATION_OPERATIVO"]
+    ruta = "/api/v1/revisiones/pendientes"
+    modelo = client.get(ruta, params={"gestion": 2026, "deteccion": "ISOLATION_FOREST"}, headers=h).json()
+    assert [(f["id"], f["detecciones"]) for f in modelo["filas"]] == [
+        (caso.id, ["ISOLATION_FOREST"])
+    ]
+    assert modelo["conteos_deteccion"] == {"ISOLATION_FOREST": 1, "REGLA_INVENTARIO": 0}
+    reglas = client.get(ruta, params={"gestion": 2026, "deteccion": "REGLA_INVENTARIO"}, headers=h).json()
+    assert reglas["total"] == 0
+
+    otro = MovimientoKardex(
+        articulo_id=operaciones.id,
+        fecha_movimiento=momento.date(),
+        detalle="Caso ficticio con dos detecciones",
+        salidas=8000,
+        saldo_registrado=1300,
+        registrado_en=momento + timedelta(seconds=1),
+        ocurrido_en=momento,
+        encargado_id=usuario_admin.id,
+        usuario_registrador_id=usuario_admin.id,
+        tipo_operacion="Ventas",
+        alertas_control=[{"codigo": "CANTIDAD_ATIPICA", "nivel": "medio",
+                          "mensaje": "Cantidad fuera de rango", "datos": {}}],
+    )
+    db_session.add(otro)
+    db_session.flush()
+    mixto = registrar_caso(db_session, otro, "MOVIMIENTO")
+    db_session.commit()
+    reglas = client.get(ruta, params={"gestion": 2026, "deteccion": "REGLA_INVENTARIO"}, headers=h).json()
+    assert [(f["id"], f["detecciones"]) for f in reglas["filas"]] == [
+        (mixto.id, ["ISOLATION_FOREST", "REGLA_INVENTARIO"])
+    ]
+    assert reglas["conteos_deteccion"] == {"ISOLATION_FOREST": 2, "REGLA_INVENTARIO": 1}
     registrar_caso(db_session, nuevo, "MOVIMIENTO")
-    assert db_session.query(ResultadoOperativo).count() == 1
+    assert db_session.query(ResultadoOperativo).count() == 2
     assert db_session.get(AperturaInventario, operaciones.id).cantidad_actual == anterior
-    assert client.get("/api/v1/analitica-operativa/resultados", headers=h).json()["total"] == 1
+    assert client.get("/api/v1/analitica-operativa/resultados", headers=h).json()["total"] == 2
 
 
 def test_archivo_alterado_impide_activar_sin_deserializar(

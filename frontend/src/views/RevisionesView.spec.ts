@@ -1,15 +1,15 @@
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import RevisionesView from './RevisionesView.vue'
-const { get, post, auth } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), auth: { rol: 'Administrador' } }))
+const { get, post, auth, route } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), auth: { rol: 'Administrador' }, route: { query: {} as Record<string, string> } }))
 vi.mock('@/services/api', () => ({ default: { get, post, defaults: { baseURL: 'http://localhost:8010/api/v1' } } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
+vi.mock('vue-router', () => ({ useRoute: () => route }))
 const fila = { id: 1, tipo: 'HIL', origen: 'HIL', articulo_id: 7, articulo: 'Libro de prueba QA', codigo: 'QA', fecha: null, descripcion: 'Revisar fecha del papel', estado: 'Por categorizar', prioridad: 'MEDIA', score: null, destino: { path: '/kardex-digital', query: { articulo_id: 7, tab: 'hil' } } }
 const bandeja = { total: 61, pagina: 1, limite: 30, conteos: { HIL: 60, MODELO: 1, OPERATIVO: 0 }, gestiones: [2025], filas: [fila, { ...fila, id: 2, tipo: 'SEGUIMIENTO', origen: 'MODELO', fecha: '2025-01-02', score: .7, destino: null }], alcance: 'Avisos para revisar; no son discrepancias confirmadas.' }
 const detalle = { id: 2, articulo_id: 7, movimiento_id: 99, score: .7, umbral: .6, estado_revision: 'PENDIENTE', revision_numero: 0, datos_cambiaron: false, snapshot: { articulo: 'Libro de prueba QA', detalle: 'Fila conservada', fecha: '2025-01-02', ingresos: null, salidas: 2, ruta_imagen_respaldo: null }, contexto: { indicadores: ['Cantidad inusual'] }, revisiones: [] }
 beforeEach(() => {
-  auth.rol = 'Administrador'; get.mockReset(); post.mockReset()
+  auth.rol = 'Administrador'; route.query = {}; get.mockReset(); post.mockReset()
   get.mockImplementation((url: string) => Promise.resolve({ data: url === '/automatizacion/estado' ? { configurada: true, habilitada: true } : url.includes('/seguimiento/') ? detalle : bandeja }))
 })
 function montar() { return mount(RevisionesView, { global: { stubs: { RouterLink: RouterLinkStub, TrazabilidadArticulo: true } } }) }
@@ -19,6 +19,49 @@ function diferida<T>() {
   return { promise, resolve, reject }
 }
 describe('Revisiones cotidianas', () => {
+  it('abre por defecto la gestión boliviana y permite filtrar las detecciones por separado', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2027-01-01T02:00:00Z'))
+    const original = get.getMockImplementation()!
+    get.mockImplementation((url: string) => url === '/revisiones/pendientes'
+      ? Promise.resolve({ data: { ...bandeja, filas: [
+        { ...fila, tipo: 'OPERATIVO', origen: 'OPERATIVO', detecciones: ['ISOLATION_FOREST', 'REGLA_INVENTARIO'] },
+      ] } })
+      : original(url))
+    const w = montar()
+    try {
+      await flushPromises()
+      const gestion = w.get<HTMLSelectElement>('[aria-label="Gestión del aviso"]')
+      expect(gestion.element.value).toBe('2026')
+      expect(get).toHaveBeenCalledWith('/revisiones/pendientes', expect.objectContaining({ params: expect.objectContaining({ gestion: 2026 }) }))
+      expect(w.get('tbody tr td').text()).toContain('Isolation Forest operativo')
+      expect(w.get('tbody tr td').text()).toContain('Regla de inventario')
+      await w.get('[aria-label="Origen del aviso"]').setValue('ISOLATION_FOREST')
+      await w.get('form.filtros').trigger('submit')
+      await flushPromises()
+      expect(get).toHaveBeenLastCalledWith('/revisiones/pendientes', expect.objectContaining({
+        params: expect.objectContaining({ origen: 'OPERATIVO', deteccion: 'ISOLATION_FOREST', gestion: 2026 }),
+      }))
+      await gestion.setValue('')
+      await w.get('form.filtros').trigger('submit')
+      await flushPromises()
+      expect(get).toHaveBeenLastCalledWith('/revisiones/pendientes', expect.objectContaining({ params: expect.objectContaining({ gestion: undefined }) }))
+    } finally {
+      w.unmount()
+      vi.useRealTimers()
+    }
+  })
+  it.each([
+    [{ gestion: '2024' }, '2024', 2024, false],
+    [{ gestion: '2024', sin_fecha: '1' }, 'SIN_FECHA', undefined, true],
+  ])('respeta el enlace directo de auditoría %j', async (query, seleccion, gestion, sin_fecha) => {
+    route.query = query as Record<string, string>
+    const w = montar()
+    await flushPromises()
+    expect(w.get<HTMLSelectElement>('[aria-label="Gestión del aviso"]').element.value).toBe(seleccion)
+    expect(get).toHaveBeenCalledWith('/revisiones/pendientes', expect.objectContaining({ params: expect.objectContaining({ gestion, sin_fecha }) }))
+    w.unmount()
+  })
   it.each([false, true])('ignora el resultado tardío de otra revisión (fallo: %s)', async falla => {
     const pendiente = diferida<{ data: typeof detalle }>()
     post.mockReturnValue(pendiente.promise)

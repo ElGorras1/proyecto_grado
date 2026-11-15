@@ -23,7 +23,7 @@ from app.models.activos import Activo
 from app.models.analitica_operativa import ModeloOperativo, ResultadoOperativo
 from app.models.inventario import AperturaInventario
 from app.models.kardex import MovimientoKardex
-from app.services.control_alertas import ORIGENES, operacion
+from app.services.control_alertas import CODIGO_ISOLATION_OPERATIVO, ORIGENES, operacion
 from app.services.datos_analitica import huella
 
 ARTEFACTOS = Path(__file__).resolve().parents[2] / ".analytics_operativa"
@@ -301,7 +301,7 @@ def puntuar_nueva(db, fila, clase):
         fila.alertas_control = [
             *(fila.alertas_control or []),
             dict(
-                codigo="ISOLATION_OPERATIVO",
+                codigo=CODIGO_ISOLATION_OPERATIVO,
                 nivel="medio",
                 mensaje="La operación es inusual respecto del modelo digital activo. "
                 "Requiere revisión documental.",
