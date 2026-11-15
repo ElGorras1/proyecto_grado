@@ -238,6 +238,7 @@ onMounted(() => {
     </section>
     <section class="panel">
       <h2>Puntuaciones posteriores al registro</h2>
+      <p v-if="auth.rol !== 'Operador'"><router-link :to="{ name: 'validacionOperativa' }">Evaluar operaciones con y sin alerta</router-link></p>
       <form class="filtros" aria-label="Filtrar puntuaciones" @submit.prevent="aplicarFiltros">
         <label
           >Gestión de registro

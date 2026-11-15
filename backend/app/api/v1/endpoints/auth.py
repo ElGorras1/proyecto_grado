@@ -123,6 +123,7 @@ def leer_usuario_actual(request: Request, response: Response, usuario: Usuario =
         email=usuario.email,
         rol=usuario.rol.nombre,
         area_id=usuario.area_id,
+        datos_operativos_simulados=settings.DATOS_OPERATIVOS_SIMULADOS,
     )
 
 

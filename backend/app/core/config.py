@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: Literal["development", "test", "production"] = "development"
     GEMINI_API_KEY: str | None = None
+    DATOS_OPERATIVOS_SIMULADOS: bool = False
     KARDEX_TANDA_ACTUAL: int = Field(default=3, ge=1, le=9999)
     KARDEX_MAX_PAGINAS: int = Field(default=20, gt=0)
     KARDEX_MAX_MB_IMAGEN: int = Field(default=20, gt=0)

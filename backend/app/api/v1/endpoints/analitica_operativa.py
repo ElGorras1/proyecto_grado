@@ -9,7 +9,7 @@ from uuid import uuid4
 import joblib
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import or_, select, text
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,12 +17,10 @@ from app.api.deps import require_roles
 from app.db.session import get_db
 from app.models.activos import Activo
 from app.models.analitica_operativa import ModeloOperativo, ResultadoOperativo
-from app.models.inventario import CustodiaExterna, EventoCustodiaExterna, TransferenciaArea
-from app.models.kardex import MovimientoKardex
 from app.services import analitica_operativa as servicio
 from app.services.datos_analitica import huella
 from app.services.inventario import auditar
-from app.services.periodos import limites_gestion
+from app.services.validacion_operativa import en_gestion
 
 router = APIRouter(prefix="/analitica-operativa", tags=["Analítica de inventario actual"])
 lector = require_roles("Administrador", "Auditor", "Operador")
@@ -270,26 +268,7 @@ def resultados(
     if articulo_id is not None:
         q = q.filter_by(articulo_id=articulo_id)
     if gestion is not None:
-        inicio, fin = limites_gestion(gestion)
-        # La gestión pertenece al registro original, aunque se puntúe otro año.
-        fuentes = (
-            (ResultadoOperativo.movimiento_id, MovimientoKardex),
-            (ResultadoOperativo.transferencia_id, TransferenciaArea),
-            (ResultadoOperativo.custodia_id, CustodiaExterna),
-            (ResultadoOperativo.evento_custodia_id, EventoCustodiaExterna),
-        )
-        q = q.filter(
-            or_(
-                *(
-                    referencia.in_(
-                        select(clase.id).where(
-                            clase.registrado_en >= inicio, clase.registrado_en < fin
-                        )
-                    )
-                    for referencia, clase in fuentes
-                )
-            )
-        )
+        q = en_gestion(q, gestion)
     rs = (
         q.order_by(ResultadoOperativo.creado_en.desc(), ResultadoOperativo.id.desc())
         .offset((pagina - 1) * limite)

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import MarcaInstitucional from '@/components/MarcaInstitucional.vue'
 import NavegacionTrabajo from '@/components/NavegacionTrabajo.vue'
 const route = useRoute()
+const auth = useAuthStore()
 </script>
 
 <template>
@@ -12,6 +14,9 @@ const route = useRoute()
       <span class="nombre-sistema">Gestión de inventario<span>Archivo histórico y operaciones</span></span>
     </div>
   </header>
+  <p v-if="!route.meta.public && auth.usuario?.datos_operativos_simulados" class="modo-demostracion">
+    Entorno de demostración · Operaciones con datos sintéticos
+  </p>
   <NavegacionTrabajo v-if="!route.meta.public" />
   <router-view />
 </template>
@@ -20,6 +25,7 @@ const route = useRoute()
 .cabecera-institucional { background: white; border-bottom: 1px solid var(--border-color); }
 .cabecera-interior { max-width: 1360px; margin: auto; padding: .2rem 1.5rem; display: flex; align-items: center; gap: 1.5rem; }
 .nombre-sistema { border-left: 1px solid var(--border-color); padding-left: 1.5rem; font-size: .9rem; font-weight: 600; color: var(--text-primary); }
+.modo-demostracion { margin: 0; padding: .5rem 1rem; background: #fff5da; color: #453400; text-align: center; }
 .nombre-sistema span { display: block; color: var(--text-secondary); font-size: .75rem; font-weight: 400; margin-top: .15rem; }
 @media (max-width: 480px) { .cabecera-interior { gap: .5rem; padding: .2rem .5rem; } .nombre-sistema { padding-left: .7rem; font-size: .8rem; } .nombre-sistema span { font-size: .7rem; } }
 </style>

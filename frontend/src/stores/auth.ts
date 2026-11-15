@@ -7,6 +7,7 @@ export interface UsuarioActual {
   email: string
   rol: 'Administrador' | 'Operador' | 'Auditor'
   area_id: number | null
+  datos_operativos_simulados?: boolean
 }
 
 interface AuthState {

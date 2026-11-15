@@ -383,3 +383,22 @@ El logo original `frontend/src/assets/fundacion-patino.png` pertenece a la Funda
 Su procedencia registrada es `https://fundacionpatino.org/lib/logo.png`, descargado
 el 29/09/2026; se mantienen proporciones y colores. La paleta usa azul `#436986`,
 fondo `#f5f7fa` y texto `#293e50`, definidos en `minimalist.css`.
+
+
+### Evaluar el modelo de operaciones digitales
+
+En Revisiones y alertas, abre Consultas de auditoría y selecciona Evaluación de
+operaciones. El Administrador prepara una muestra de una gestión con el modelo
+activo. El muestreo guarda la versión del modelo y la evidencia de operaciones
+puntuadas con y sin alerta. Administrador y Auditor cotejan la evidencia con el
+respaldo documental y registran normal, anómalo o indeterminado con el motivo.
+
+Durante el cotejo, la muestra mantiene ocultas las alertas y las puntuaciones.
+Completa los dictámenes en esa vista antes de consultar las alertas de los casos
+seleccionados. Al concluir se muestran los conteos, la precisión, la sensibilidad
+y el F1 de los casos concluyentes de la muestra. El resumen indica cuántos
+dictámenes fueron indeterminados.
+
+En una instalación de demostración con operaciones sintéticas, configura
+DATOS_OPERATIVOS_SIMULADOS=true. La interfaz identifica el entorno y los estudios
+conservan esa procedencia. Usa una base separada para la demostración.

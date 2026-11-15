@@ -159,6 +159,7 @@ onMounted(async () => {
       <p v-if="estadoAutomatico?.ultimo_error" role="status" class="nota">El último seguimiento histórico necesita atención de mantenimiento.</p>
       <router-link :to="{ name: 'analitica' }">Resultados históricos por gestión</router-link>
       <router-link :to="{ name: 'alertasInventario' }">Historial y filtros de casos operativos</router-link>
+      <router-link v-if="puedeRevisar" :to="{ name: 'validacionOperativa' }">Evaluación de operaciones</router-link>
       <router-link v-if="auth.rol === 'Administrador'" :to="{ name: 'analiticaOperativa' }">Estado del modelo para operaciones digitales</router-link>
     </details>
     <form class="filtros" @submit.prevent="cargar(1, true)">

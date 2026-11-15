@@ -47,6 +47,7 @@ __all__ = [
     "AperturaInventario", "ConciliacionInicial", "TransferenciaArea",
     "CustodiaExterna", "EventoCustodiaExterna", "CoberturaArticulo", "TramoCobertura",
     "CasoControl", "RevisionControl", "ModeloOperativo", "ResultadoOperativo", "CierreAnual",
+    "CotejoOperativo", "EstudioOperativo",
 ]
 
 from app.models.auditoria_historica import ModeloHistorico, ResultadoHistorico, RevisionHistorica
@@ -59,4 +60,5 @@ from app.models.cobertura import CoberturaArticulo, TramoCobertura
 from app.models.control_alertas import CasoControl, RevisionControl
 from app.models.analitica_operativa import ModeloOperativo, ResultadoOperativo
 from app.models.cierre_anual import CierreAnual
+from app.models.validacion_operativa import CotejoOperativo, EstudioOperativo
 from app.models.automatizacion_analitica import PoliticaAnalitica, ResultadoSeguimiento, RevisionSeguimiento  # noqa: F401

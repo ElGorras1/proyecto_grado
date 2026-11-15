@@ -14,6 +14,7 @@ x-api: &api
     ENVIRONMENT: production
     JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Configura JWT_SECRET_KEY}
     BACKEND_CORS_ORIGINS: '["${PUBLIC_ORIGIN:?Configura PUBLIC_ORIGIN con HTTPS}"]'
+    DATOS_OPERATIVOS_SIMULADOS: "${DATOS_OPERATIVOS_SIMULADOS:-false}"
     GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   volumes:
     - evidencias:/app/storage

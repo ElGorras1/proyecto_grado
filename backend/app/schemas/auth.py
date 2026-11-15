@@ -17,5 +17,6 @@ class UsuarioMe(BaseModel):
     email: EmailStr
     rol: str
     area_id: int | None = None
+    datos_operativos_simulados: bool = False
 
     model_config = ConfigDict(from_attributes=True)

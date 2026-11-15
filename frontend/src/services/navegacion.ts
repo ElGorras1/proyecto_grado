@@ -12,7 +12,7 @@ export const secciones: Record<string, { ruta: string; titulo: string }[]> = {
 
 export function espacioDe(ruta: unknown) {
   if (['kardexDigital', 'inventarioVivo', 'preparacionInventario', 'articulosInventario'].includes(String(ruta))) return 'articulosInventario'
-  if (['revisiones', 'analitica', 'alertasInventario'].includes(String(ruta))) return 'revisiones'
+  if (['revisiones', 'analitica', 'alertasInventario', 'validacionOperativa'].includes(String(ruta))) return 'revisiones'
   if (['reportes', 'reporteInventario', 'gestionInstitucional', 'cierresGestion'].includes(String(ruta))) return 'reportes'
   if (['administracion', 'usuarios', 'areasCatalogos', 'reporteAccesos', 'validacionProyecto', 'analiticaOperativa', 'mantenimientoAnalitico', 'muestraValidacion'].includes(String(ruta))) return 'administracion'
   return ''

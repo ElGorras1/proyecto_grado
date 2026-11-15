@@ -40,8 +40,9 @@ from app.api.v1.endpoints import rectificaciones_logisticas
 api_router.include_router(rectificaciones_logisticas.router)
 from app.api.v1.endpoints import preparacion_inventario
 api_router.include_router(preparacion_inventario.router)
-from app.api.v1.endpoints import validacion_independiente
+from app.api.v1.endpoints import validacion_independiente, validacion_operativa
 api_router.include_router(validacion_independiente.router)
+api_router.include_router(validacion_operativa.router)
 from app.api.v1.endpoints import automatizacion_analitica, revisiones
 api_router.include_router(automatizacion_analitica.router)
 api_router.include_router(revisiones.router)
