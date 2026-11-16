@@ -34,7 +34,7 @@ if ($usarDemo) {
     }
     $urlApi = 'http://127.0.0.1:8000/api/v1'
     $entornoDemo = @{
-        DATABASE_URL = 'sqlite:///' + $base.Replace('', '/')
+        DATABASE_URL = 'sqlite:///' + $base.Replace([char]92, [char]47)
         RUTA_MODELOS_OPERATIVOS = $modelos
         DATOS_OPERATIVOS_SIMULADOS = 'true'
         ENVIRONMENT = 'development'
