@@ -57,7 +57,8 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 @app.get("/health", tags=["Sistema"])
 def health_check():
-    return {"status": "ok", "environment": settings.ENVIRONMENT}
+    return {"status": "ok", "environment": settings.ENVIRONMENT,
+            "datos_operativos_simulados": settings.DATOS_OPERATIVOS_SIMULADOS}
 
 @app.get("/health/ready", tags=["Sistema"])
 def readiness(db: Session = Depends(get_db)):

@@ -19,6 +19,7 @@ import numpy as np
 import sklearn
 from sklearn.ensemble import IsolationForest
 
+from app.core.config import settings
 from app.models.activos import Activo
 from app.models.analitica_operativa import ModeloOperativo, ResultadoOperativo
 from app.models.inventario import AperturaInventario
@@ -26,7 +27,7 @@ from app.models.kardex import MovimientoKardex
 from app.services.control_alertas import CODIGO_ISOLATION_OPERATIVO, ORIGENES, operacion
 from app.services.datos_analitica import huella
 
-ARTEFACTOS = Path(__file__).resolve().parents[2] / ".analytics_operativa"
+ARTEFACTOS = settings.RUTA_MODELOS_OPERATIVOS or Path(__file__).resolve().parents[2] / ".analytics_operativa"
 MINIMO = 125
 MIN_DIAS = 14
 log = logging.getLogger(__name__)
